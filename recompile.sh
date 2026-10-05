@@ -17,8 +17,8 @@ if [[ "$CHECK_RESULT" == *"Specification is realizable"* ]]; then
 
 elif [[ "$CHECK_RESULT" == *"Specification is unrealizable"* ]]; then
     echo "Result: UNREALIZABLE! Extracting counter-strategy..."
-    ./slugs/src/slugs --counterStrategy --jsonOutput LabSamples.slugsin > counter_strategy.json
-    echo "Failed: Environment winning playbook saved to counter_strategy.json"
+    ./slugs/src/slugs --counterStrategy LabSamples.slugsin > counter_strategy.txt
+    echo "Failed: Environment winning playbook saved to counter_strategy.txt"
 
 else
     echo "An unexpected error occurred during the SLUGS check:"
