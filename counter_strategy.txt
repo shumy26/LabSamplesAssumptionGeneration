@@ -1,0 +1,20 @@
+State 0 with rank (0,0) -> <at_floor:1, at_lab:0, auth_present:0, barcode_ok:0, env_monitor_0:0, env_monitor_1:0, env_monitor_2:0, human_pickup:0, request:0, goto_floor:0, goto_lab:0, load_machine:0, log_event:0, scan:0>
+	With successors : 1, 2, 3, 4, 5, 6, 7, 8
+State 1 with rank (0,1) -> <at_floor:1, at_lab:0, auth_present:0, barcode_ok:0, env_monitor_0:0, env_monitor_1:0, env_monitor_2:0, human_pickup:0, request:0, goto_floor:0, goto_lab:0, load_machine:0, log_event:0, scan:0>
+	With successors : 1, 2, 3, 4, 5, 6, 7, 8
+State 2 with rank (0,1) -> <at_floor:1, at_lab:0, auth_present:0, barcode_ok:0, env_monitor_0:0, env_monitor_1:0, env_monitor_2:0, human_pickup:0, request:0, goto_floor:0, goto_lab:0, load_machine:0, log_event:0, scan:1>
+	With successors : 9
+State 9 with rank (0,1) -> <at_floor:1, at_lab:0, auth_present:0, barcode_ok:0, env_monitor_0:0, env_monitor_1:0, env_monitor_2:0, human_pickup:0, request:0>
+	With no successors.
+State 3 with rank (0,1) -> <at_floor:1, at_lab:0, auth_present:0, barcode_ok:0, env_monitor_0:0, env_monitor_1:0, env_monitor_2:0, human_pickup:0, request:0, goto_floor:0, goto_lab:0, load_machine:0, log_event:1, scan:0>
+	With successors : 1, 2, 3, 4, 5, 6, 7, 8
+State 4 with rank (0,1) -> <at_floor:1, at_lab:0, auth_present:0, barcode_ok:0, env_monitor_0:0, env_monitor_1:0, env_monitor_2:0, human_pickup:0, request:0, goto_floor:0, goto_lab:0, load_machine:0, log_event:1, scan:1>
+	With successors : 9
+State 5 with rank (0,1) -> <at_floor:1, at_lab:0, auth_present:0, barcode_ok:0, env_monitor_0:0, env_monitor_1:0, env_monitor_2:0, human_pickup:0, request:0, goto_floor:0, goto_lab:0, load_machine:1, log_event:0, scan:0>
+	With successors : 9
+State 6 with rank (0,1) -> <at_floor:1, at_lab:0, auth_present:0, barcode_ok:0, env_monitor_0:0, env_monitor_1:0, env_monitor_2:0, human_pickup:0, request:0, goto_floor:0, goto_lab:0, load_machine:1, log_event:0, scan:1>
+	With successors : 9
+State 7 with rank (0,1) -> <at_floor:1, at_lab:0, auth_present:0, barcode_ok:0, env_monitor_0:0, env_monitor_1:0, env_monitor_2:0, human_pickup:0, request:0, goto_floor:0, goto_lab:0, load_machine:1, log_event:1, scan:0>
+	With successors : 9
+State 8 with rank (0,1) -> <at_floor:1, at_lab:0, auth_present:0, barcode_ok:0, env_monitor_0:0, env_monitor_1:0, env_monitor_2:0, human_pickup:0, request:0, goto_floor:0, goto_lab:0, load_machine:1, log_event:1, scan:1>
+	With successors : 9

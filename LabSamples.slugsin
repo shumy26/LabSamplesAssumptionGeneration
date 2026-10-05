@@ -1,0 +1,80 @@
+[INPUT]
+at_floor
+at_lab
+auth_present
+barcode_ok
+env_monitor_0
+env_monitor_1
+env_monitor_2
+human_pickup
+request
+
+
+[OUTPUT]
+goto_floor
+goto_lab
+load_machine
+log_event
+scan
+
+
+[ENV_TRANS]
+! & at_floor at_lab
+| ! & at_floor ! goto_lab at_floor'
+| ! & at_lab ! goto_floor at_lab'
+| ! & ! barcode_ok ! scan ! barcode_ok'
+| ! & & barcode_ok ! load_machine ! human_pickup barcode_ok'
+| ! | load_machine human_pickup ! barcode_ok'
+& | ! env_monitor_0' & | env_monitor_0 & goto_lab ! at_lab ! at_lab' | env_monitor_0' ! & | env_monitor_0 & goto_lab ! at_lab ! at_lab'
+& | ! env_monitor_1' & | env_monitor_1 & goto_floor ! at_floor ! at_floor' | env_monitor_1' ! & | env_monitor_1 & goto_floor ! at_floor ! at_floor'
+& | ! env_monitor_2' & | env_monitor_2 & & auth_present scan ! barcode_ok ! barcode_ok' | env_monitor_2' ! & | env_monitor_2 & & auth_present scan ! barcode_ok ! barcode_ok'
+
+
+[ENV_INIT]
+! request
+! auth_present
+! human_pickup
+at_floor
+! at_lab
+! barcode_ok
+! env_monitor_0
+! env_monitor_1
+! env_monitor_2
+
+
+[SYS_TRANS]
+! & goto_floor goto_lab
+| ! scan & & & at_floor auth_present ! barcode_ok ! human_pickup
+| | ! goto_lab barcode_ok ! at_floor
+| ! | & & & request barcode_ok at_floor ! human_pickup & & goto_lab ! at_lab ! human_pickup goto_lab'
+| ! load_machine & & at_lab barcode_ok ! human_pickup
+| ! & & at_lab barcode_ok ! human_pickup load_machine
+| ! & & at_lab barcode_ok ! human_pickup ! goto_floor
+| ! & at_lab | ! barcode_ok human_pickup goto_floor'
+| ! & goto_floor ! at_floor goto_floor'
+| ! & & & ! request at_floor ! goto_lab ! goto_floor ! goto_lab'
+| ! & & & ! request at_floor ! goto_lab ! goto_floor ! goto_floor'
+| ! scan log_event
+| ! goto_floor log_event
+| ! goto_lab log_event
+| ! load_machine log_event
+
+
+[SYS_INIT]
+! goto_floor
+! goto_lab
+! scan
+! load_machine
+! log_event
+
+
+[ENV_LIVENESS]
+! env_monitor_0
+! env_monitor_1
+! env_monitor_2
+
+
+[SYS_LIVENESS]
+| | ! & request auth_present load_machine human_pickup
+at_floor
+

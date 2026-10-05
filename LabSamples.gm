@@ -1,0 +1,87 @@
+Initialization [EnvironmentStart]
+  Concerns: Sample, Location, Agent
+  InformalDef: The sample starts on the patient floor, before authorization and barcode confirmation.
+  FormalDef: !request & !auth_present & !human_pickup & at_floor & !at_lab & !barcode_ok
+
+Initialization [SystemStart]
+  Concerns: Robot, AnalysisMachine, Log
+  InformalDef: The controller starts idle.
+  FormalDef: !goto_floor & !goto_lab & !scan & !load_machine & !log_event
+
+Goal Maintain [ExclusiveNavigation]
+  FormalDef: !(goto_floor & goto_lab)
+
+Goal Maintain [ScanRequiresAuthorizedSampleAtFloor]
+  FormalDef: scan -> (at_floor & auth_present & !barcode_ok & !human_pickup)
+
+Goal Maintain [LabNavigationRequiresSample]
+  FormalDef: goto_lab -> (barcode_ok | !at_floor)
+
+Goal Maintain [NavigationPersistence]
+  FormalDef: ((request & barcode_ok & at_floor & !human_pickup) | (goto_lab & !at_lab & !human_pickup)) -> goto_lab'
+
+Goal Maintain [LoadRequiresLabSample]
+  FormalDef: load_machine -> (at_lab & barcode_ok & !human_pickup)
+
+Goal Maintain [LoadWhenReady]
+  FormalDef: (at_lab & barcode_ok & !human_pickup) -> load_machine
+
+Goal Maintain [NoPrematureReturn]
+  FormalDef: (at_lab & barcode_ok & !human_pickup) -> !goto_floor
+
+Goal Maintain [ReturnAfterProcessing]
+  FormalDef: (at_lab & (!barcode_ok | human_pickup)) -> goto_floor'
+
+Goal Maintain [ReturnPersistence]
+  FormalDef: (goto_floor & !at_floor) -> goto_floor'
+
+Goal Maintain [IdleNavigation]
+  FormalDef: (!request & at_floor & !goto_lab & !goto_floor) -> !goto_lab'
+
+Goal Maintain [IdleReturn]
+  FormalDef: (!request & at_floor & !goto_lab & !goto_floor) -> !goto_floor'
+
+Goal Maintain [ScanIsLogged]
+  FormalDef: scan -> log_event
+
+Goal Maintain [ReturnIsLogged]
+  FormalDef: goto_floor -> log_event
+
+Goal Maintain [DepartureIsLogged]
+  FormalDef: goto_lab -> log_event
+
+Goal Maintain [LoadingIsLogged]
+  FormalDef: load_machine -> log_event
+
+Assumption [LocationMutex]
+  FormalDef: !(at_floor & at_lab)
+
+Assumption [FloorInertia]
+  FormalDef: at_floor & !goto_lab -> at_floor'
+
+Assumption [LaboratoryInertia]
+  FormalDef: at_lab & !goto_floor -> at_lab'
+
+Assumption [BarcodeReaderCausality]
+  FormalDef: (!barcode_ok & !scan) -> !barcode_ok'
+
+Assumption [BarcodePersistence]
+  FormalDef: (barcode_ok & !load_machine & !human_pickup) -> barcode_ok'
+
+Assumption [SampleConsumed]
+  FormalDef: (load_machine | human_pickup) -> !barcode_ok'
+
+Assumption [LaboratoryArrival]
+  FormalDef: goto_lab -> F at_lab
+
+Assumption [FloorArrival]
+  FormalDef: goto_floor -> F at_floor
+
+Assumption [BarcodeBecomesValid]
+  FormalDef: (auth_present & scan) -> F barcode_ok
+
+Goal Achieve [MissionCompletion]
+  FormalDef: F (!(request & auth_present) | (load_machine | human_pickup))
+
+Goal Achieve [ReturnToFloor]
+  FormalDef: F at_floor

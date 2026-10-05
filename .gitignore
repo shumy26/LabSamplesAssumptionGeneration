@@ -1,0 +1,5 @@
+articles/
+__pycache__
+sim_example/
+sim_results/
+slugs/
