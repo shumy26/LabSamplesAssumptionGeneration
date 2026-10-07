@@ -68,6 +68,14 @@ def split_response(formula):
     return match.groups() if match else None
 
 
+def make_monitor_name(header, owner):
+    goal_name = re.search(r'\[([^]]+)\]', header)
+    if goal_name is None:
+        raise ValueError(f"Cannot name monitor for malformed header: {header}")
+    safe_name = re.sub(r'[^A-Za-z0-9_]+', '_', goal_name.group(1)).strip('_')
+    return f"{owner}_monitor_{safe_name}"
+
+
 def add_owned_variables(formula, owner, owners):
     for variable in extract_variables(clean_formula(formula)):
         previous_owner = owners.setdefault(variable, owner)
@@ -92,8 +100,6 @@ def generate_slugs(input_file, output_file):
     env_init = []
     sys_init = []
     
-    monitor_counter = 0
-
     owners = {}
     for block in blocks:
         header = block['header']
@@ -147,20 +153,18 @@ def generate_slugs(input_file, output_file):
             rhs = clean_formula(response[1])
             
             if header.startswith("Assumption"):
-                monitor_name = f"env_monitor_{monitor_counter}"
+                monitor_name = make_monitor_name(header, "env")
                 inputs.add(monitor_name)
                 env_init.append(f"!{monitor_name}")
                 env_trans.append(response_monitor(monitor_name, lhs, rhs))
                 env_liveness.append(f"!{monitor_name}")
             else:
-                monitor_name = f"sys_monitor_{monitor_counter}"
+                monitor_name = make_monitor_name(header, "sys")
                 outputs.add(monitor_name)
                 sys_init.append(f"!{monitor_name}")
                 sys_trans.append(response_monitor(monitor_name, lhs, rhs))
                 sys_liveness.append(f"!{monitor_name}")
                 
-            monitor_counter += 1
-            
         # 4. Safety, Invariants, Mutexes, and Frame Conditions
         elif header.startswith('Goal') or header.startswith('Assumption'):
             if "->" in flat_formula:

@@ -3,9 +3,9 @@ at_floor
 at_lab
 auth_present
 barcode_ok
-env_monitor_0
-env_monitor_1
-env_monitor_2
+env_monitor_BarcodeBecomesValid
+env_monitor_FloorArrival
+env_monitor_LaboratoryArrival
 human_pickup
 request
 
@@ -23,9 +23,9 @@ scan
 at_floor
 !at_lab
 !barcode_ok
-!env_monitor_0
-!env_monitor_1
-!env_monitor_2
+!env_monitor_LaboratoryArrival
+!env_monitor_FloorArrival
+!env_monitor_BarcodeBecomesValid
 
 [SYS_INIT]
 !goto_floor
@@ -41,14 +41,14 @@ at_floor
 !((!barcode_ok & !scan)) | (!barcode_ok')
 !((barcode_ok & !load_machine & !human_pickup)) | (barcode_ok')
 !((load_machine | human_pickup)) | (!barcode_ok')
-(!env_monitor_0' | ((env_monitor_0 | ((goto_lab) & !(at_lab))) & !(at_lab'))) & (env_monitor_0' | !((env_monitor_0 | ((goto_lab) & !(at_lab))) & !(at_lab')))
-(!env_monitor_1' | ((env_monitor_1 | ((goto_floor) & !(at_floor))) & !(at_floor'))) & (env_monitor_1' | !((env_monitor_1 | ((goto_floor) & !(at_floor))) & !(at_floor')))
-(!env_monitor_2' | ((env_monitor_2 | (((auth_present & scan)) & !(barcode_ok))) & !(barcode_ok'))) & (env_monitor_2' | !((env_monitor_2 | (((auth_present & scan)) & !(barcode_ok))) & !(barcode_ok')))
+(!env_monitor_LaboratoryArrival' | ((env_monitor_LaboratoryArrival | ((goto_lab) & !(at_lab))) & !(at_lab'))) & (env_monitor_LaboratoryArrival' | !((env_monitor_LaboratoryArrival | ((goto_lab) & !(at_lab))) & !(at_lab')))
+(!env_monitor_FloorArrival' | ((env_monitor_FloorArrival | ((goto_floor) & !(at_floor))) & !(at_floor'))) & (env_monitor_FloorArrival' | !((env_monitor_FloorArrival | ((goto_floor) & !(at_floor))) & !(at_floor')))
+(!env_monitor_BarcodeBecomesValid' | ((env_monitor_BarcodeBecomesValid | (((auth_present & scan)) & !(barcode_ok))) & !(barcode_ok'))) & (env_monitor_BarcodeBecomesValid' | !((env_monitor_BarcodeBecomesValid | (((auth_present & scan)) & !(barcode_ok))) & !(barcode_ok')))
 
 [ENV_LIVENESS]
-!env_monitor_0
-!env_monitor_1
-!env_monitor_2
+!env_monitor_LaboratoryArrival
+!env_monitor_FloorArrival
+!env_monitor_BarcodeBecomesValid
 
 [SYS_TRANS]
 !(goto_floor & goto_lab)

@@ -1,9 +1,31 @@
 import json
 import os
+import random
+from html import escape
 from pathlib import Path
 
 
 MONITOR_PREFIXES = ("env_monitor_", "sys_monitor_")
+
+LAB_SAMPLE_MISSION = {
+    "request_step": 1,
+    "authorization_step": 1,
+    "allow_human_pickup": False,
+    "barcode_validation_delay": 1,
+    "lab_arrival_delay": 2,
+    "floor_arrival_delay": 2,
+}
+
+SCENARIO_TRIALS = 50
+DASHBOARD_SEED = 20261007
+DASHBOARD_FILE = "sim_results/controller_dashboard.html"
+SCENARIO_DESCRIPTIONS = {
+    "NoAdversity": "Normal simulation flow with no changes.",
+    "ScanFault": "Scanner failure; barcode_ok is never activated.",
+    "AbandonedRequest": "No authorized personnel; auth_present is never activated.",
+    "LabPickup": "A human always intervenes in the laboratory.",
+    "RandomStress": "Random scanner failure or human intervention with delayed responses.",
+}
 
 
 def parse_sections(slugs_file):
@@ -57,28 +79,81 @@ def environment_step(step, current_inputs, current_outputs, params):
     next_inputs = dict(current_inputs)
     events = []
 
+    barcode_delay = max(1, params.get("barcode_validation_delay", 1))
+    lab_delay = max(1, params.get("lab_arrival_delay", 1))
+    floor_delay = max(1, params.get("floor_arrival_delay", 1))
+
     request_step = params.get("request_step", 1)
     authorization_step = params.get("authorization_step", 1)
     pickup_step = params.get("human_pickup_step")
 
     next_inputs["request"] = int(step + 1 >= request_step)
-    next_inputs["auth_present"] = int(step + 1 >= authorization_step)
-    next_inputs["human_pickup"] = int(pickup_step is not None and step + 1 == pickup_step)
+    next_inputs["auth_present"] = int(
+        not params.get("authorization_unavailable", False)
+        and step + 1 >= authorization_step
+    )
+    next_inputs["human_pickup"] = int(
+        (pickup_step is not None and step + 1 == pickup_step)
+        or (
+            params.get("human_pickup_mode") == "always"
+            and current_inputs["at_lab"]
+        )
+    )
 
-    if current_outputs.get("goto_lab", 0):
+    if (
+        current_outputs.get("goto_lab", 0)
+        and not current_inputs["at_lab"]
+        and "lab_command_step" not in params
+    ):
+        params["lab_command_step"] = step
+    if (
+        current_outputs.get("goto_floor", 0)
+        and not current_inputs["at_floor"]
+        and "floor_command_step" not in params
+    ):
+        params["floor_command_step"] = step
+
+    lab_command_step = params.get("lab_command_step")
+    if (
+        current_outputs.get("goto_lab", 0)
+        and lab_command_step is not None
+        and step - lab_command_step + 1 >= lab_delay
+    ):
         next_inputs["at_floor"] = 0
         next_inputs["at_lab"] = 1
+        params.pop("lab_command_step", None)
         events.append("arrived at laboratory")
-    elif current_outputs.get("goto_floor", 0):
+    elif (
+        current_outputs.get("goto_floor", 0)
+        and params.get("floor_command_step") is not None
+        and step - params["floor_command_step"] + 1 >= floor_delay
+    ):
         next_inputs["at_floor"] = 1
         next_inputs["at_lab"] = 0
+        params.pop("floor_command_step", None)
         events.append("returned to patient floor")
 
-    if current_outputs.get("scan", 0) and current_inputs.get("auth_present", 0):
+    if (
+        current_outputs.get("scan", 0)
+        and current_inputs.get("auth_present", 0)
+        and not params.get("scanner_failure", False)
+    ):
+        params.setdefault("scan_step", step)
+    elif current_outputs.get("scan", 0) and params.get("scanner_failure", False):
+        events.append("scanner failure prevented barcode validation")
+
+    scan_step = params.get("scan_step")
+    if (
+        scan_step is not None
+        and not current_inputs["barcode_ok"]
+        and step - scan_step + 1 >= barcode_delay
+    ):
         next_inputs["barcode_ok"] = 1
+        params.pop("scan_step", None)
         events.append("barcode accepted")
     elif current_outputs.get("load_machine", 0) or current_inputs.get("human_pickup", 0):
         next_inputs["barcode_ok"] = 0
+        params.pop("scan_step", None)
         events.append("sample consumed")
     else:
         next_inputs["barcode_ok"] = current_inputs["barcode_ok"]
@@ -186,15 +261,21 @@ def choose_successor(node, nodes, variables, input_variables, expected_inputs):
 
 
 def mission_complete(trace):
+    mission_started = any(
+        item["inputs"].get("request", 0)
+        and item["inputs"].get("auth_present", 0)
+        for item in trace
+    )
     consumed = any(
         item["outputs"].get("load_machine", 0) or item["inputs"].get("human_pickup", 0)
         for item in trace
     )
     returned = bool(trace) and trace[-1]["inputs"].get("at_floor", 0)
-    return consumed and returned
+    return mission_started and consumed and returned
 
 
 def run_single_mission(mission_config, controller, input_variables, output_variables, max_steps=30):
+    mission_config = dict(mission_config)
     variables = controller["variables"]
     nodes = controller["nodes"]
     current_id = "0"
@@ -263,15 +344,10 @@ def print_trace(trace):
         print(f"{item['step']:>4} | {item['node']:>4} | IN: {active_inputs} | OUT: {active_outputs} | {'yes' if item['is_goal'] else 'no'}")
 
 
-def run_single_example_mission(json_file="controller.json", slugs_file="LabSamples.slugsin"):
+def run_lab_sample_mission(json_file="controller.json", slugs_file="LabSamples.slugsin"):
     controller, input_variables, output_variables = load_controller(json_file, slugs_file)
-    mission = {
-        "request_step": 1,
-        "authorization_step": 1,
-        "allow_human_pickup": False,
-    }
     result = run_single_mission(
-        mission, controller, input_variables, output_variables
+        LAB_SAMPLE_MISSION, controller, input_variables, output_variables
     )
     export_trace_to_dot(result["trace"], "sim_example/EXAMPLE_MISSION.dot")
     print_trace(result["trace"])
@@ -282,6 +358,262 @@ def run_single_example_mission(json_file="controller.json", slugs_file="LabSampl
     return result
 
 
+def run_bad_case_missions(
+    json_file="controller.json",
+    slugs_file="LabSamples.slugsin",
+    trials=SCENARIO_TRIALS,
+    seed=None,
+):
+    controller, input_variables, output_variables = load_controller(json_file, slugs_file)
+    rng = random.Random(seed)
+    results = []
+
+    for trial in range(1, trials + 1):
+        mission = dict(LAB_SAMPLE_MISSION)
+        mission.update({
+            "request_step": rng.randint(1, 3),
+            "authorization_step": rng.randint(1, 3),
+            "lab_arrival_delay": rng.randint(2, 5),
+            "floor_arrival_delay": rng.randint(2, 5),
+        })
+        result = run_single_mission(
+            mission,
+            controller,
+            input_variables,
+            output_variables,
+        )
+        results.append(result)
+        if result["status"] != "SUCCESS":
+            print(f"Trial {trial} failed: {result['reason']}")
+
+    successful = sum(result["status"] == "SUCCESS" for result in results)
+    print(f"Bad-case trials: {successful}/{trials} successful (seed={seed})")
+    return results
+
+
+def make_scenario_mission(scenario, rng):
+    mission = dict(LAB_SAMPLE_MISSION)
+    if scenario == "NoAdversity":
+        return mission
+    if scenario == "ScanFault":
+        mission["scanner_failure"] = True
+        return mission
+    if scenario == "AbandonedRequest":
+        mission["authorization_unavailable"] = True
+        return mission
+    if scenario == "LabPickup":
+        mission["allow_human_pickup"] = True
+        mission["human_pickup_mode"] = "always"
+        return mission
+    if scenario == "RandomStress":
+        mission.update({
+            "request_step": rng.randint(1, 3),
+            "authorization_step": rng.randint(1, 3),
+            "lab_arrival_delay": rng.randint(2, 5),
+            "floor_arrival_delay": rng.randint(2, 5),
+            "scanner_failure": rng.random() < 0.35,
+        })
+        if not mission["scanner_failure"] and rng.random() < 0.35:
+            mission["allow_human_pickup"] = True
+            mission["human_pickup_mode"] = "always"
+        return mission
+    raise ValueError(f"Unknown simulation scenario: {scenario}")
+
+
+def run_scenario(mission, controller, input_variables, output_variables):
+    try:
+        return run_single_mission(
+            mission, controller, input_variables, output_variables
+        )
+    except ValueError as error:
+        return {
+            "status": "VIOLATION",
+            "reason": str(error),
+            "trace": [],
+            "events": [],
+        }
+
+
+def run_dashboard(
+    json_file="controller.json",
+    slugs_file="LabSamples.slugsin",
+    trials=SCENARIO_TRIALS,
+    seed=DASHBOARD_SEED,
+    dashboard_file=DASHBOARD_FILE,
+):
+    controller, input_variables, output_variables = load_controller(json_file, slugs_file)
+    rng = random.Random(seed)
+    simulations = []
+
+    scenarios = (
+        "NoAdversity",
+        "ScanFault",
+        "AbandonedRequest",
+        "LabPickup",
+        "RandomStress",
+    )
+    for scenario in scenarios:
+        for trial in range(1, trials + 1):
+            mission = make_scenario_mission(scenario, rng)
+            result = run_scenario(
+                mission, controller, input_variables, output_variables
+            )
+            simulations.append({
+                "scenario": scenario,
+                "name": f"{scenario} {trial:02d}",
+                "mission": mission,
+                "result": result,
+            })
+
+    write_dashboard(simulations, seed, dashboard_file)
+    successful = sum(simulation["result"]["status"] == "SUCCESS" for simulation in simulations)
+    print(
+        f"Dashboard written to {dashboard_file} "
+        f"({successful}/{len(simulations)} simulations successful, seed={seed})"
+    )
+    return simulations
+
+
+def write_dashboard(simulations, seed, dashboard_file):
+    os.makedirs(os.path.dirname(dashboard_file), exist_ok=True)
+    successful = sum(
+        simulation["result"]["status"] == "SUCCESS"
+        for simulation in simulations
+    )
+    failed = sum(simulation["result"]["status"] == "FAILED" for simulation in simulations)
+    violations = sum(simulation["result"]["status"] == "VIOLATION" for simulation in simulations)
+    total_steps = sum(
+        len(simulation["result"]["trace"]) for simulation in simulations
+    )
+    total_events = sum(
+        len(simulation["result"]["events"]) for simulation in simulations
+    )
+    scenario_counts = {}
+    for simulation in simulations:
+        counts = scenario_counts.setdefault(
+            simulation["scenario"],
+            {"total": 0, "success": 0, "failed": 0, "violations": 0},
+        )
+        counts["total"] += 1
+        status = simulation["result"]["status"]
+        if status == "SUCCESS":
+            counts["success"] += 1
+        elif status == "FAILED":
+            counts["failed"] += 1
+        else:
+            counts["violations"] += 1
+    scenario_rows = "".join(
+        "<tr>"
+        f"<td>{escape(scenario)}</td><td>{escape(SCENARIO_DESCRIPTIONS[scenario])}</td>"
+        f"<td>{counts['total']}</td>"
+        f"<td>{counts['success']}</td><td>{counts['failed']}</td>"
+        f"<td>{counts['violations']}</td>"
+        "</tr>"
+        for scenario, counts in scenario_counts.items()
+    )
+
+    cards = []
+    for index, simulation in enumerate(simulations):
+        result = simulation["result"]
+        trace_rows = []
+        for item in result["trace"]:
+            active_inputs = ", ".join(
+                name for name, value in item["inputs"].items() if value
+            ) or "-"
+            active_outputs = ", ".join(
+                name for name, value in item["outputs"].items() if value
+            ) or "-"
+            monitors = ", ".join(
+                name
+                for name, value in item["inputs"].items()
+                if value and "monitor" in name
+            ) or "-"
+            trace_rows.append(
+                "<tr>"
+                f"<td>{item['step']}</td><td>{escape(str(item['node']))}</td>"
+                f"<td>{escape(active_inputs)}</td><td>{escape(active_outputs)}</td>"
+                f"<td>{escape(monitors)}</td><td>{'yes' if item['is_goal'] else 'no'}</td>"
+                "</tr>"
+            )
+
+        event_list = "".join(
+            f"<li>{escape(event)}</li>" for event in result["events"]
+        ) or "<li>No environment events</li>"
+        raw_data = escape(json.dumps({
+            "mission": simulation["mission"],
+            "status": result["status"],
+            "reason": result["reason"],
+            "events": result["events"],
+            "trace": result["trace"],
+        }, indent=2))
+        status_class = "success" if result["status"] == "SUCCESS" else "failure"
+        open_attribute = " open" if index == 0 else ""
+        cards.append(f"""
+                <details class="simulation {status_class}"{open_attribute}>
+          <summary><strong>{escape(simulation['name'])}</strong>
+                        <span>{escape(simulation['scenario'])}</span>
+            <span>{escape(result['status'])}</span>
+            <span>{len(result['trace'])} steps</span>
+          </summary>
+          <div class="simulation-content">
+            <p><strong>Reason:</strong> {escape(result['reason'])}</p>
+            <h3>Mission parameters</h3>
+            <pre>{escape(json.dumps(simulation['mission'], indent=2))}</pre>
+            <h3>Environment events</h3>
+            <ul>{event_list}</ul>
+            <h3>State and action trace</h3>
+            <table><thead><tr><th>Step</th><th>Node</th><th>Inputs</th>
+              <th>Outputs</th><th>Active monitors</th><th>Goal</th></tr></thead>
+              <tbody>{''.join(trace_rows)}</tbody>
+            </table>
+            <h3>Raw simulation record</h3>
+            <pre>{raw_data}</pre>
+          </div>
+        </details>""")
+
+    html = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Controller simulation dashboard</title>
+<style>
+  :root {{ color-scheme: dark; font-family: system-ui, sans-serif; }}
+  body {{ margin: 0; background: #111827; color: #e5e7eb; }}
+  main {{ max-width: 1500px; margin: auto; padding: 32px; }}
+  h1 {{ margin-top: 0; }}
+  .meta {{ color: #9ca3af; }}
+  .summary {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }}
+  .metric, details {{ background: #1f2937; border: 1px solid #374151; border-radius: 8px; }}
+  .metric {{ padding: 18px; }}
+  .metric strong {{ display: block; font-size: 1.8rem; }}
+  .success {{ border-left: 4px solid #34d399; }}
+  .failure {{ border-left: 4px solid #f87171; }}
+  details {{ margin: 10px 0; }}
+  summary {{ cursor: pointer; display: flex; gap: 18px; padding: 14px 16px; }}
+  summary span {{ color: #9ca3af; }}
+  .simulation-content {{ padding: 0 16px 20px; overflow-x: auto; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: .9rem; }}
+  th, td {{ text-align: left; vertical-align: top; padding: 8px; border-bottom: 1px solid #374151; }}
+  th {{ color: #93c5fd; }}
+  pre {{ white-space: pre-wrap; background: #111827; padding: 12px; border-radius: 6px; overflow: auto; }}
+  @media (max-width: 800px) {{ .summary {{ grid-template-columns: repeat(2, 1fr); }} main {{ padding: 16px; }} }}
+</style></head><body><main>
+<h1>Controller simulation dashboard</h1>
+<p class="meta">Generated with seed {seed}. Every simulation includes its complete mission configuration, events, state trace, actions, and monitor activity.</p>
+<section class="summary">
+  <div class="metric"><strong>{len(simulations)}</strong>Total simulations</div>
+  <div class="metric"><strong>{successful}</strong>Successful</div>
+    <div class="metric"><strong>{failed}</strong>Failed / {violations} violations</div>
+    <div class="metric"><strong>{total_steps}</strong>Total steps / {total_events} events</div>
+</section>
+<h2>Scenario statistics</h2>
+<table><thead><tr><th>Scenario</th><th>Description</th><th>Runs</th><th>Success</th>
+    <th>Failed</th><th>Violations</th></tr></thead>
+    <tbody>{scenario_rows}</tbody></table>
+<h2>Complete simulation records</h2>
+{''.join(cards)}
+</main></body></html>"""
+    Path(dashboard_file).write_text(html, encoding="utf-8")
+
+
 if __name__ == "__main__":
-    os.makedirs("sim_example", exist_ok=True)
-    run_single_example_mission()
+    run_dashboard()
