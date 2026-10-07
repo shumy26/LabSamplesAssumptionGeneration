@@ -54,10 +54,7 @@ at_floor
 | ! & goto_floor ! at_floor goto_floor'
 | ! & & & ! request at_floor ! goto_lab ! goto_floor ! goto_lab'
 | ! & & & ! request at_floor ! goto_lab ! goto_floor ! goto_floor'
-| ! scan log_event
-| ! goto_floor log_event
-| ! goto_lab log_event
-| ! load_machine log_event
+| ! | | | scan goto_floor goto_lab load_machine log_event
 
 
 [SYS_INIT]

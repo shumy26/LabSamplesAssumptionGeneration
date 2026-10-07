@@ -36,8 +36,8 @@ at_floor
 
 [ENV_TRANS]
 !(at_floor & at_lab)
-!(at_floor & !goto_lab) | (at_floor')
-!(at_lab & !goto_floor) | (at_lab')
+!((at_floor & !goto_lab)) | (at_floor')
+!((at_lab & !goto_floor)) | (at_lab')
 !((!barcode_ok & !scan)) | (!barcode_ok')
 !((barcode_ok & !load_machine & !human_pickup)) | (barcode_ok')
 !((load_machine | human_pickup)) | (!barcode_ok')
@@ -62,10 +62,7 @@ at_floor
 !((goto_floor & !at_floor)) | (goto_floor')
 !((!request & at_floor & !goto_lab & !goto_floor)) | (!goto_lab')
 !((!request & at_floor & !goto_lab & !goto_floor)) | (!goto_floor')
-!(scan) | (log_event)
-!(goto_floor) | (log_event)
-!(goto_lab) | (log_event)
-!(load_machine) | (log_event)
+!((scan | goto_floor | goto_lab | load_machine)) | (log_event)
 
 [SYS_LIVENESS]
 (!(request & auth_present) | (load_machine | human_pickup))

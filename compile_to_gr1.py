@@ -1,23 +1,34 @@
 import re
 
+
+HEADER_RE = re.compile(
+    r'^(?:Initialization|Assumption(?:\s+Achieve)?|'
+    r'Goal(?:\s+(?:Maintain|Achieve))?)\s+\[[^]]+\]$'
+)
+VARIABLE_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+OPERATORS = {'AND', 'OR', 'NOT', 'F', 'G', 'True', 'False'}
+
+
 def flatten_predicate(match):
-    """Converts Predicate(a, b) into Predicate_a_b to create valid Boolean variables."""
+    """Convert Predicate(a, b) into Predicate_a_b for Boolean Slugs atoms."""
     predicate = match.group(1)
-    args = match.group(2).replace(', ', '_').replace(',', '_')
+    args = re.sub(r'\s*,\s*', '_', match.group(2).strip())
     return f"{predicate}_{args}"
 
+
 def clean_formula(formula):
-    """Flattens predicates and normalizes logical operators for Slugs."""
+    """Flatten atoms and normalize the infix operators accepted by Slugs."""
     cleaned = re.sub(r'([A-Za-z0-9_]+)\(([^)]+)\)', flatten_predicate, formula)
-    cleaned = cleaned.replace('F ', '').replace('G ', '')
-    cleaned = cleaned.replace('&&', '&').replace('||', '|')
-    return cleaned
+    cleaned = re.sub(r'\b[FG]\s+', '', cleaned)
+    return cleaned.replace('&&', '&').replace('||', '|').strip()
+
 
 def extract_variables(formula_str):
-    """Extracts unique boolean variables. Naturally ignores next-state primes (')."""
-    words = set(re.findall(r'[A-Za-z_][A-Za-z0-9_]*', formula_str))
-    operators = {'AND', 'OR', 'NOT', 'F', 'G', 'True', 'False'}
-    return words - operators
+    """Return Boolean atoms, ignoring operators and next-state primes."""
+    return {
+        word for word in VARIABLE_RE.findall(formula_str)
+        if word not in OPERATORS
+    }
 
 def prime_formula(formula_str, variables):
     """Adds next-state operator (') to variables for synthesized liveness transitions."""
@@ -33,27 +44,38 @@ def response_monitor(monitor_name, lhs, rhs):
     return f"(!{monitor_name}' | ({pending})) & ({monitor_name}' | !({pending}))"
 
 def parse_blocks(content):
-    blocks = re.split(r'\n\s*\n', content.strip())
+    """Read model entries without inferring FormalDef from arbitrary text."""
     parsed = []
-    for block in blocks:
-        lines = [
-            line.strip()
-            for line in block.splitlines()
-            if line.strip() and not line.strip().startswith('#')
-        ]
-        if not lines:
+    current = None
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#'):
             continue
-
-        formal_def = next(
-            (
-                line.replace('FormalDef:', '').strip()
-                for line in reversed(lines)
-                if any(token in line for token in ('->', '|', '&', "'", 'F ', 'G '))
-            ),
-            '',
-        )
-        parsed.append((lines[0], formal_def))
+        if HEADER_RE.match(line):
+            if current is not None:
+                parsed.append(current)
+            current = {'header': line, 'formal_def': ''}
+        elif current is not None and line.startswith('FormalDef:'):
+            current['formal_def'] = line.removeprefix('FormalDef:').strip()
+    if current is not None:
+        parsed.append(current)
     return parsed
+
+
+def split_response(formula):
+    """Return (antecedent, consequent) for the restricted A -> F B pattern."""
+    match = re.fullmatch(r'(.+?)\s*->\s*F\s+(.+)', formula)
+    return match.groups() if match else None
+
+
+def add_owned_variables(formula, owner, owners):
+    for variable in extract_variables(clean_formula(formula)):
+        previous_owner = owners.setdefault(variable, owner)
+        if previous_owner != owner:
+            raise ValueError(
+                f"Variable {variable!r} is assigned to both "
+                f"{previous_owner} and {owner}"
+            )
 
 def generate_slugs(input_file, output_file):
     with open(input_file, 'r') as f:
@@ -72,40 +94,36 @@ def generate_slugs(input_file, output_file):
     
     monitor_counter = 0
 
-    environment_vars = set()
-    system_vars = set()
-    for header, formal_def in blocks:
-        if not header.startswith('Initialization') or not formal_def:
-            continue
-        variables = extract_variables(clean_formula(formal_def))
-        if 'Environment' in header:
-            environment_vars.update(variables)
-        else:
-            system_vars.update(variables)
+    owners = {}
+    for block in blocks:
+        header = block['header']
+        formal_def = block['formal_def']
+        if formal_def and header.startswith('Initialization'):
+            owner = 'environment' if 'Environment' in header else 'system'
+            add_owned_variables(formal_def, owner, owners)
 
-    env_keywords = {
-        'Collected', 'Authorized', 'SpecificRobot', 'At_d_loc', 
-        'ValidLocation', 'InTransit', 'PathClear', 'CollectedBy'
-    }
+    if not owners:
+        raise ValueError('Goal model has no initialization ownership declarations')
 
-    for header, formal_def in blocks:
+    inputs.update(var for var, owner in owners.items() if owner == 'environment')
+    outputs.update(var for var, owner in owners.items() if owner == 'system')
+
+    for block in blocks:
+        header = block['header']
+        formal_def = block['formal_def']
         if not formal_def:
             continue
 
         flat_formula = clean_formula(formal_def)
         variables = extract_variables(flat_formula)
+        unknown = variables - owners.keys()
+        if unknown:
+            raise ValueError(
+                f"{header} refers to variables without initialization ownership: "
+                + ', '.join(sorted(unknown))
+            )
 
-        for var in variables:
-            if var in system_vars:
-                outputs.add(var)
-            elif var in environment_vars:
-                inputs.add(var)
-            elif var in env_keywords or any(var.startswith(k + '_') for k in env_keywords):
-                inputs.add(var)
-            else:
-                outputs.add(var)
-
-        # 1. Parse Initial States (NEW)
+        # Initialization leaves define the initial valuation for one player.
         if header.startswith("Initialization"):
             init_conditions = [c.strip() for c in flat_formula.split('&')]
             if "Environment" in header:
@@ -115,19 +133,18 @@ def generate_slugs(input_file, output_file):
             continue
 
         # 2. Pure Liveness Assumption or System Guarantee
-        if "F " in formal_def and "->" not in formal_def:
-            pure_live = formal_def.replace('F ', '').strip()
-            clean_live = clean_formula(pure_live)
+        response = split_response(formal_def)
+        if response is None and re.match(r'^F\s+', formal_def):
+            clean_live = clean_formula(re.sub(r'^F\s+', '', formal_def))
             if header.startswith("Assumption"):
                 env_liveness.append(clean_live)
             else:
                 sys_liveness.append(clean_live)
 
         # 3. Response Pattern (Liveness: A -> F B)
-        elif "->" in flat_formula and "F " in formal_def:
-            parts = flat_formula.split("->")
-            lhs = parts[0].strip()
-            rhs = parts[1].strip()
+        elif response is not None:
+            lhs = clean_formula(response[0])
+            rhs = clean_formula(response[1])
             
             if header.startswith("Assumption"):
                 monitor_name = f"env_monitor_{monitor_counter}"
@@ -145,7 +162,7 @@ def generate_slugs(input_file, output_file):
             monitor_counter += 1
             
         # 4. Safety, Invariants, Mutexes, and Frame Conditions
-        else:
+        elif header.startswith('Goal') or header.startswith('Assumption'):
             if "->" in flat_formula:
                 parts = flat_formula.split("->")
                 lhs = parts[0].strip()
@@ -158,6 +175,8 @@ def generate_slugs(input_file, output_file):
                 env_trans.append(formula)
             else:
                 sys_trans.append(formula)
+        else:
+            raise ValueError(f"Unsupported goal model leaf: {header}")
 
     with open(output_file, 'w') as f:
         f.write("[INPUT]\n")
