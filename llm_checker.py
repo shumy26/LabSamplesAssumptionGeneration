@@ -198,7 +198,12 @@ def run_review(args):
         "counter_strategy_excerpt": counter_strategy_excerpt,
         "context_size": args.context_size,
     }
-    report = ask_ollama(args.model, args.endpoint, context)
+    report = ask_ollama(
+        args.model,
+        args.endpoint,
+        context,
+        include_goal_model=args.include_goal_model,
+    )
     report["realizability"] = status
     report["model"] = args.model
     Path(args.report).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -220,7 +225,7 @@ def main():
     parser.add_argument("--slugs-input", default="LabSamples.slugsin")
     parser.add_argument("--parser", default="slugs/tools/StructuredSlugsParser/compiler.py")
     parser.add_argument("--slugs", default="./slugs/src/slugs")
-    parser.add_argument("--model", default="gemma4:12b")
+    parser.add_argument("--model", default="gemma4:26b")
     parser.add_argument(
         "--without-goal-model",
         dest="include_goal_model",

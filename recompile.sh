@@ -13,14 +13,14 @@ if [[ "$CHECK_REALIZABILITY" == *"Specification is realizable"* ]]; then
     ./slugs/src/slugs --explicitStrategy --jsonOutput LabSamples.slugsin > controller.json
     echo "Success: Saved to controller.json"
     python3 llm_checker.py \
-        --model "${OLLAMA_MODEL:-gemma4:12b}"
+        --model "${OLLAMA_MODEL:-gemma4:26b}"
 
 elif [[ "$CHECK_REALIZABILITY" == *"Specification is unrealizable"* ]]; then
     echo "Result: UNREALIZABLE! Extracting counter-strategy..."
     ./slugs/src/slugs --counterStrategy LabSamples.slugsin > counter_strategy.txt
     echo "Failed: Environment winning strategy saved to counter_strategy.txt"
     python3 llm_checker.py \
-        --model "${OLLAMA_MODEL:-gemma4:12b}"
+        --model "${OLLAMA_MODEL:-gemma4:26b}"
 
 else
     echo "An unexpected error occurred during the SLUGS check:"

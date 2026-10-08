@@ -5,7 +5,7 @@
     "omitted_formula": "(auth_present & scan) -> F barcode_ok"
   },
   "started_at_epoch": 1791472485.573478,
-  "model": "gemma4:12b",
+  "model": "gemma4:26b",
   "local": {
     "elapsed_seconds": 300.631,
     "exit_code": 1,

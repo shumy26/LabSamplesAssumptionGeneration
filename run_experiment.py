@@ -71,7 +71,7 @@ def main():
         "experiment": "intentional omission detection",
         "expected_ground_truth": EXPECTED,
         "started_at_epoch": time.time(),
-        "model": "gemma4:12b",
+        "model": "gemma4:26b",
         "without_goal_model": {},
         "with_goal_model": {},
     }
