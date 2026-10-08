@@ -1,0 +1,47 @@
+Goal Model Design and Compilation Rules
+
+These rules define a structurally valid KAOS Goal Model that can be translated into the restricted GR(1) fragment used by the current workflow.
+
+1. Strict decomposition (the refinement tree)
+
+Every model should begin with abstract root goals that describe the final purpose, for example Achieve [SampleTransported].
+
+Use AND refinements to decompose complex goals. To transport a sample, the robot may need Achieve [SampleScanned] AND Achieve [SampleLoaded].
+
+Stop decomposition only when a leaf is a Requirement fully controlled by robot outputs or an Assumption fully controlled by environment inputs.
+
+2. Strict variable ownership (the agent principle)
+
+GR(1) synthesis is a two-player game with perfect information. Each atomic proposition must belong to exactly one agent.
+
+The system must never define the next state of an environment variable. For example, the system must not promise Goal Maintain [at_lab], because arrival at the laboratory depends on sensors and physics. The system should promise the command Goal Maintain [goto_lab] and use Assumption [LaboratoryArrival] for the environment response.
+
+3. Strict temporal classification (leaf syntax)
+
+The synthesis tool does not accept arbitrary full LTL. Leaf nodes must use these temporal categories:
+
+- Initialization defines the state at step zero. It must not contain temporal operators or next-state references.
+- Safety (Maintain or Avoid) defines valid transitions. Use the next-state operator (') to connect the current state to the immediate future when a transition is required.
+- Liveness (Achieve or Guarantee) defines something that must happen repeatedly. Use F, which the current compiler treats as GR(1) eventuality. Do not nest complex temporal operators such as F(G(x)).
+
+4. Liveness pairing (starvation prevention)
+
+For every system Goal Achieve that depends on an external condition, provide a corresponding Assumption Achieve.
+
+If the robot has a liveness goal requiring load_machine, but a safety rule permits loading only when barcode_ok is true, the environment needs an Assumption guaranteeing that the barcode becomes valid after scanning. Without this pairing, the environment can win by doing nothing.
+
+5. Physical completeness of the environment (inertia and mutex)
+
+Synthesis treats the environment as chaotic and adversarial unless the model constrains it. Add inertia assumptions for every environment variable representing the physical world. The environment must not teleport the sample or robot. If the system does not issue a movement command, location sensors should retain their value in the next state, for example (at_floor & !goto_lab) -> at_floor'. Add mutex assumptions where physical states cannot coexist, such as !(at_floor & at_lab).
+
+Compiler contract from compile_to_gr1.py
+
+- Accepted headers are exactly Initialization [Name], Assumption [Name], Assumption Achieve [Name], Goal [Name], Goal Maintain [Name], or Goal Achieve [Name].
+- Only lines beginning with FormalDef: are compiled. InformalDef and other explanatory text are ignored by the compiler.
+- Initialization formulas define ownership. Variables initialized under an Environment header become INPUTs; variables initialized under a System header become OUTPUTs. Every later atom must have exactly one initialization owner.
+- Predicate(a, b) is flattened to Predicate_a_b. && and || are normalized to & and |. Boolean atoms use identifiers. The supported operators and forms are !, &, |, ->, ', F, G, True, and False.
+- Initialization leaves are state formulas only. Safety formulas may be invariants or implications; implications are compiled as !antecedent | consequent. An outer G(...) wrapper is accepted for safety formulas.
+- Liveness is limited to F B or A -> F B. A -> F B is compiled with an internal response monitor. A and B must use already-owned variables and must not contain arbitrary temporal nesting.
+- Assumptions control environment INPUT transitions and liveness. Goals control system OUTPUT transitions and liveness. Never assign one atom to both players.
+- The generated structured SLUGS model and parser output are the executable authority. Proposed formulas must compile without undefined variables, unsupported temporal nesting, or ownership conflicts.
+- Candidate changes must match the existing Goal Model vocabulary, preserve the current workflow, and be small enough to review. If a new variable is necessary, specify its owner, initialization value, and model location.

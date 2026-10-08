@@ -51,61 +51,69 @@ def parse_json_response(content):
 
 
 def build_review_prompt(context, include_goal_model=True):
-    goal_model = context["goal_model"] if include_goal_model else "[Goal Model omitted from LLM context.]"
-    return f"""You are a reviewer for a research workflow that translates robotic mission descriptions into GR(1).
-Analyze the supplied Goal Model, GR(1) specification, Slugs result, and counter-strategy if present.
-Do not modify files and do not assume that realizability means correctness.
+    goal_model = context["goal_model"] if include_goal_model else "[Goal Model omitted from this review variant.]"
 
-Look for four kinds of findings:
-1. missing_assumption: an omitted physical or environmental constraint;
-2. missing_atomic_proposition: a state or event needed to express the mission;
-3. contradiction: conflicting assumptions or requirements exposed by the result/counter-strategy;
-4. unjustified_strengthening: an assumption that makes synthesis easier but is not justified by the mission.
+    return f"""You are an expert reviewer for a research workflow translating robotic mission descriptions into GR(1) specifications via KAOS Goal Models.
 
-For every finding, connect the evidence to the Goal Model or mission text. Candidate changes are suggestions only:
-the human engineer must decide whether to implement them. Do not claim that Slugs proves semantic correctness.
-Use concise evidence and rationale instead of hidden chain-of-thought.
-Return at most three findings; keep each evidence and rationale under 40 words.
+Use every supplied artifact as evidence: the natural-language mission, Goal Model, design rules, compiler contract, generated structured SLUGS model, parser output, realizability result, and counter-strategy. Do not assume that a realizable specification is physically correct. The generated artifacts describe what the current workflow actually synthesizes; identify mismatches between them and the mission.
 
-Return ONLY valid JSON with this shape:
+Identify up to three findings from these categories:
+1. missing_assumption: an omitted physical constraint (e.g., location mutex).
+2. missing_atomic_proposition: a system state or event needed but not defined.
+3. contradiction: conflicting assumptions or requirements causing unrealizability.
+4. unjustified_strengthening: an assumption that forces realizability by cheating physics or ignoring the mission.
+
+Return ONLY valid JSON. Give concise, externally checkable reasoning in each finding; do not provide hidden chain-of-thought or a state-by-state private trace.
+
+JSON SCHEMA:
 {{
-  "summary": "short overall assessment",
+  "summary": "Short overall assessment of the specification's health.",
   "findings": [
     {{
       "category": "missing_assumption|missing_atomic_proposition|contradiction|unjustified_strengthening",
       "severity": "low|medium|high",
-      "evidence": "specific formula, variable, or counter-strategy state",
-      "rationale": "why this matters for the mission",
+      "evidence": "Specific formula, variable, or step in the counter-strategy.",
+      "rationale": "Why this matters for the robot's physical mission.",
       "proposal": {{
         "action": "add_assumption|add_atomic_proposition|revise_assumption|none",
-        "header": "proposed or existing name",
-        "informal_def": "human-readable proposal",
-        "formal_def": "candidate one-line formula or empty string",
-        "variables": ["existing_or_proposed_variable"]
-      }},
-      "confidence": 0.0
+                "header": "One accepted KAOS header, or an existing header to revise",
+                "informal_def": "Human-readable proposal consistent with the mission",
+                "formal_def": "One-line candidate formula accepted by the compiler, or empty string",
+        "variables": ["list_of_variables"]
+            }},
+            "confidence": 0.0
     }}
   ],
-  "human_questions": ["questions the engineer should answer before editing"]
+  "human_questions": ["Questions the engineer must answer before accepting these changes."]
 }}
 
-GOAL MODEL:
-{goal_model}
-
-STRUCTURED GR(1) MODEL:
-{context['structured_slugs']}
+DESIGN AND COMPILATION RULES FROM rulesgm.txt:
+{context['rules']}
 
 NATURAL-LANGUAGE MISSION:
 {context['mission_text']}
 
-SLUGS INPUT:
+GOAL MODEL:
+{goal_model}
+
+GENERATED STRUCTURED SLUGS MODEL:
+{context['structured_slugs']}
+
+PARSER OUTPUT:
 {context['slugs_input']}
 
 REALIZABILITY RESULT:
 {context['realizability_result']}
 
 COUNTER-STRATEGY:
-{context['counter_strategy_excerpt'] or 'Not available because the specification is realizable.'}
+{context['counter_strategy_excerpt'] or 'Not available. Specification is realizable.'}
+
+PROPOSAL REQUIREMENTS:
+- Match the existing Goal Model vocabulary and the design rules; do not invent a different modeling style.
+- Put environment facts and physical responses under Assumption, and controller commands under Goal, with ownership established by Initialization.
+- Preserve the current workflow's exact accepted headers and one-line FormalDef syntax.
+- Prefer the smallest change that explains the evidence. If a proposed variable is necessary, specify its owner, initialization value, and where it belongs in the Goal Model.
+- Never propose a formula that the compiler contract rejects or that would make the model realizable by assuming away the mission.
 """
 
 
@@ -196,6 +204,7 @@ def run_review(args):
         "realizability_result": slugs_output,
         "counter_strategy": counter_strategy,
         "counter_strategy_excerpt": counter_strategy_excerpt,
+        "rules": Path(args.rules_file).read_text(encoding="utf-8"),
         "context_size": args.context_size,
     }
     report = ask_ollama(
@@ -221,6 +230,7 @@ def main():
     parser.add_argument("--mission-text", default="LabSamplesNL.txt")
     parser.add_argument("--counter-strategy", default="counter_strategy.txt")
     parser.add_argument("--counter-strategy-chars", type=int, default=3500)
+    parser.add_argument("--rules-file", default="rulesgm.txt")
     parser.add_argument("--structured-slugs", default="LabSamples.structuredslugs")
     parser.add_argument("--slugs-input", default="LabSamples.slugsin")
     parser.add_argument("--parser", default="slugs/tools/StructuredSlugsParser/compiler.py")
