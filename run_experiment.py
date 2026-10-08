@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -82,7 +83,7 @@ def report_metrics(report):
     }
 
 
-def run_local_review(report_file, markdown_file, include_goal_model):
+def run_local_review(report_file, markdown_file, include_goal_model, model):
     command = [
         sys.executable,
         "llm_checker.py",
@@ -90,6 +91,8 @@ def run_local_review(report_file, markdown_file, include_goal_model):
         report_file,
         "--markdown",
         markdown_file,
+        "--model",
+        model,
     ]
     if not include_goal_model:
         command.append("--without-goal-model")
@@ -103,13 +106,14 @@ def main():
     parser.add_argument("--without-goal-report", default="llm_review_without_goal.json")
     parser.add_argument("--with-goal-report", default="llm_review.json")
     parser.add_argument("--metrics", default="experiment_metrics.json")
+    parser.add_argument("--model", default=os.environ.get("OLLAMA_MODEL", "gemma4:26b"))
     args = parser.parse_args()
 
     metrics = {
         "experiment": "intentional omission detection",
         "expected_ground_truth": EXPECTED,
         "started_at_epoch": time.time(),
-        "model": "gemma4:26b",
+        "model": args.model,
         "without_goal_model": {},
         "with_goal_model": {},
     }
@@ -153,10 +157,13 @@ def main():
             report_file,
             markdown_file,
             include_goal_model,
+            args.model,
         )
         metrics[name]["elapsed_seconds"] = round(review_seconds, 3)
         metrics[name]["exit_code"] = review.returncode
         metrics[name]["report_available"] = review.returncode == 0 and Path(report_file).exists()
+        if review.returncode:
+            metrics[name]["error"] = (review.stdout + review.stderr).strip()
         if metrics[name]["report_available"]:
             metrics[name].update(report_metrics(json.loads(Path(report_file).read_text())))
 
