@@ -45,9 +45,8 @@ def report_metrics(report):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run and measure local and Gemini GR(1) reviews.")
+    parser = argparse.ArgumentParser(description="Run and measure the local Gemma GR(1) review.")
     parser.add_argument("--local-report", default="llm_review.json")
-    parser.add_argument("--gemini-report", default="gemini_review.json")
     parser.add_argument("--metrics", default="experiment_metrics.json")
     args = parser.parse_args()
 
@@ -55,8 +54,8 @@ def main():
         "experiment": "intentional omission detection",
         "expected_ground_truth": EXPECTED,
         "started_at_epoch": time.time(),
+        "model": "gemma4:12b",
         "local": {},
-        "gemini": {},
     }
 
     pipeline_started = time.perf_counter()
@@ -102,22 +101,6 @@ def main():
     metrics["local"]["report_available"] = local.returncode == 0 and Path(args.local_report).exists()
     if metrics["local"]["report_available"]:
         metrics["local"].update(report_metrics(json.loads(Path(args.local_report).read_text())))
-
-    Path(args.gemini_report).unlink(missing_ok=True)
-    gemini, gemini_seconds = run([
-        sys.executable,
-        "gemini_checker.py",
-        "--report",
-        args.gemini_report,
-    ])
-    metrics["gemini"]["elapsed_seconds"] = round(gemini_seconds, 3)
-    metrics["gemini"]["exit_code"] = gemini.returncode
-    metrics["gemini"]["status"] = (
-        "completed" if gemini.returncode == 0 else "skipped_or_failed"
-    )
-    metrics["gemini"]["report_available"] = gemini.returncode == 0 and Path(args.gemini_report).exists()
-    if metrics["gemini"]["report_available"]:
-        metrics["gemini"].update(report_metrics(json.loads(Path(args.gemini_report).read_text())))
 
     metrics["correctness_definition"] = (
         "Strict correctness requires a missing_assumption finding that references "

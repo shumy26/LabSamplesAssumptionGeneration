@@ -5,21 +5,11 @@
     "omitted_formula": "(auth_present & scan) -> F barcode_ok"
   },
   "started_at_epoch": 1791472485.573478,
+  "model": "gemma4:12b",
   "local": {
     "elapsed_seconds": 300.631,
     "exit_code": 1,
     "report_available": false
-  },
-  "gemini": {
-    "elapsed_seconds": 5.772,
-    "exit_code": 0,
-    "status": "completed",
-    "report_available": true,
-    "finding_count": 2,
-    "detects_missing_assumption": true,
-    "references_expected_omission": true,
-    "proposes_expected_formula_shape": true,
-    "strict_correctness": true
   },
   "pipeline_seconds": 0.092,
   "slugs_result": "unrealizable",
