@@ -22,11 +22,15 @@ The synthesis tool does not accept arbitrary full LTL. Leaf nodes must use these
 
 - Initialization defines the state at step zero. It must not contain temporal operators or next-state references.
 - Safety (Maintain or Avoid) defines valid transitions. Use the next-state operator (') to connect the current state to the immediate future when a transition is required.
-- Liveness (Achieve or Guarantee) defines something that must happen repeatedly. Use F, which the current compiler treats as GR(1) eventuality. Do not nest complex temporal operators such as F(G(x)).
+- Liveness (Achieve or Guarantee) defines something that must happen repeatedly. The current compiler supports two distinct forms:
+	- `F B` is unconditional liveness: B must recur according to the GR(1) liveness semantics, whether or not another event occurs. It is written directly in `[ENV_LIVENESS]` or `[SYS_LIVENESS]`.
+	- `A -> F B` is conditional response liveness: whenever trigger A occurs, B must eventually follow. It does not require B when A never occurs, so it is not equivalent to `F B`. The compiler encodes this form with a monitor transition in `[ENV_TRANS]` or `[SYS_TRANS]` and a monitor obligation in the corresponding liveness section.
+- Choose `F B` for an unconditional recurring condition such as `F at_floor`. Choose `A -> F B` for a response such as `goto_lab -> F at_lab` or `(auth_present & scan) -> F barcode_ok`.
+- Do not nest complex temporal operators such as `F(G(x))`.
 
 4. Liveness pairing (starvation prevention)
 
-For every system Goal Achieve that depends on an external condition, provide a corresponding Assumption Achieve.
+For every system Goal Achieve that depends on an external condition, provide a corresponding Assumption [Name] whose FormalDef is a liveness formula.
 
 If the robot has a liveness goal requiring load_machine, but a safety rule permits loading only when barcode_ok is true, the environment needs an Assumption guaranteeing that the barcode becomes valid after scanning. Without this pairing, the environment can win by doing nothing.
 
@@ -34,14 +38,29 @@ If the robot has a liveness goal requiring load_machine, but a safety rule permi
 
 Synthesis treats the environment as chaotic and adversarial unless the model constrains it. Add inertia assumptions for every environment variable representing the physical world. The environment must not teleport the sample or robot. If the system does not issue a movement command, location sensors should retain their value in the next state, for example (at_floor & !goto_lab) -> at_floor'. Add mutex assumptions where physical states cannot coexist, such as !(at_floor & at_lab).
 
+6. Explicit player ownership by header
+
+The header determines which player owns the proposition and which GR(1) section receives its FormalDef:
+
+- Initialization [EnvironmentName] assigns initial values to environment variables. These variables become SLUGS INPUTs.
+- Initialization [SystemName] assigns initial values to system variables. These variables become SLUGS OUTPUTs.
+- Assumption [Name] belongs to the environment. Its safety FormalDef becomes an environment transition constraint in [ENV_TRANS].
+- Assumption [Name] with `F B` belongs to the environment and places B directly in [ENV_LIVENESS].
+- Assumption [Name] with `A -> F B` belongs to the environment and places a generated response monitor in [ENV_TRANS] plus the monitor obligation in [ENV_LIVENESS]. Keep the standard `Assumption [Name]` header used by this Goal Model schema.
+- Goal Maintain [Name] belongs to the system. Its safety FormalDef becomes a system transition constraint in [SYS_TRANS]. It must constrain controller outputs and must not define the next state of an environment variable.
+- Goal Achieve [Name] belongs to the system. Its liveness FormalDef becomes a system liveness condition in [SYS_LIVENESS].
+
+Therefore, every Assumption [Name] leaf is an environment guarantee, whether its FormalDef is safety or liveness, while all Goal, Goal Maintain, and Goal Achieve leaves are system guarantees. A physical response such as arrival, sensor change, or barcode validation must be modeled as an Assumption [Name] with liveness form `A -> F B`, not as a Goal. A controller command such as goto_lab, scan, or load_machine must be modeled as a Goal and owned by a system OUTPUT variable. Never use the header alone to override variable ownership: every atom must still have exactly one matching Initialization declaration.
+
 Compiler contract from compile_to_gr1.py
 
-- Accepted headers are exactly Initialization [Name], Assumption [Name], Assumption Achieve [Name], Goal [Name], Goal Maintain [Name], or Goal Achieve [Name].
+- The canonical headers are Initialization [Name], Assumption [Name], Goal [Name], Goal Maintain [Name], and Goal Achieve [Name]. The parser also accepts Assumption Achieve [Name], but this workflow should use the canonical Assumption [Name] header and express liveness in FormalDef.
 - Only lines beginning with FormalDef: are compiled. InformalDef and other explanatory text are ignored by the compiler.
 - Initialization formulas define ownership. Variables initialized under an Environment header become INPUTs; variables initialized under a System header become OUTPUTs. Every later atom must have exactly one initialization owner.
 - Predicate(a, b) is flattened to Predicate_a_b. && and || are normalized to & and |. Boolean atoms use identifiers. The supported operators and forms are !, &, |, ->, ', F, G, True, and False.
 - Initialization leaves are state formulas only. Safety formulas may be invariants or implications; implications are compiled as !antecedent | consequent. An outer G(...) wrapper is accepted for safety formulas.
 - Liveness is limited to F B or A -> F B. A -> F B is compiled with an internal response monitor. A and B must use already-owned variables and must not contain arbitrary temporal nesting.
 - Assumptions control environment INPUT transitions and liveness. Goals control system OUTPUT transitions and liveness. Never assign one atom to both players.
+- For direct liveness, the generated structured SLUGS model contains B in the relevant liveness section. For response liveness, it contains the monitor transition and `!monitor` liveness obligation; this is the expected encoding, not a system transition.
 - The generated structured SLUGS model and parser output are the executable authority. Proposed formulas must compile without undefined variables, unsupported temporal nesting, or ownership conflicts.
 - Candidate changes must match the existing Goal Model vocabulary, preserve the current workflow, and be small enough to review. If a new variable is necessary, specify its owner, initialization value, and model location.

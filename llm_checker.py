@@ -59,6 +59,8 @@ Use every supplied artifact as evidence: the natural-language mission, Goal Mode
 
 Critically evaluate the specification for operational resilience against non-ideal physical realities. Real-world environments are imperfect: sensors may fail to read, human operators may abandon tasks, and expected environmental triggers might never occur. Look for missing timeouts, fallback states, or boundary conditions needed to prevent the system from getting permanently stuck (starvation) when the ideal sequence of events is disrupted.
 
+You are not constrained to a specific number of findings. Identify as many as you can.
+
 Identify all your findings from these categories:
 1. missing_assumption: an omitted physical constraint (e.g., location mutex).
 2. missing_atomic_proposition: a system state or event needed but not defined.
@@ -112,7 +114,7 @@ COUNTER-STRATEGY:
 
 PROPOSAL REQUIREMENTS:
 - Match the existing Goal Model vocabulary and the design rules; do not invent a different modeling style.
-- Put environment facts and physical responses under Assumption, and controller commands under Goal, with ownership established by Initialization.
+- Put environment facts and physical responses under Assumption, and controller commands under Goal, with ownership established by Initialization. An Environment 'Assumption' can ONLY guarantee environment inputs. It CANNOT force a system output (like load_machine) to occur. A System 'Goal' CANNOT force an environment input to occur.
 - Preserve the current workflow's exact accepted headers and one-line FormalDef syntax.
 - Prefer the smallest change that explains the evidence. If a proposed variable is necessary, specify its owner, initialization value, and where it belongs in the Goal Model.
 - Never propose a formula that the compiler contract rejects or that would make the model realizable by assuming away the mission.

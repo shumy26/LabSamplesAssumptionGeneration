@@ -7,8 +7,16 @@ from pathlib import Path
 
 
 EXPECTED = {
-    "omitted_assumption": "BarcodeBecomesValid",
-    "omitted_formula": "(auth_present & scan) -> F barcode_ok",
+    "omitted_assumptions": [
+        "FloorInertia",
+        "LaboratoryInertia",
+        "BarcodeBecomesValid",
+    ],
+    "omitted_formulas": {
+        "FloorInertia": "(at_floor & !goto_lab) -> at_floor'",
+        "LaboratoryInertia": "(at_lab & !goto_floor) -> at_lab'",
+        "BarcodeBecomesValid": "(auth_present & scan) -> F barcode_ok",
+    },
 }
 
 
@@ -24,23 +32,53 @@ def report_metrics(report):
     assumption_finding = any(
         item.get("category") == "missing_assumption" for item in findings
     )
-    references_omission = (
-        "barcode becomes valid" in serialized
-        or "barcodebecomesvalid" in serialized
-        or "barcode_ok" in serialized and "scan" in serialized
-    )
-    valid_candidate = any(
-        item.get("category") == "missing_assumption"
-        and item.get("proposal", {}).get("action") == "add_assumption"
-        and "barcode_ok" in item.get("proposal", {}).get("formal_def", "")
-        for item in findings
-    )
+    omission_terms = {
+        "FloorInertia": (
+            "floor inertia" in serialized
+            or "floorinertia" in serialized
+            or "at_floor" in serialized and "goto_lab" in serialized
+        ),
+        "LaboratoryInertia": (
+            "laboratory inertia" in serialized
+            or "laboratoryinertia" in serialized
+            or "at_lab" in serialized and "goto_floor" in serialized
+        ),
+        "BarcodeBecomesValid": (
+            "barcode becomes valid" in serialized
+            or "barcodebecomesvalid" in serialized
+            or "barcode_ok" in serialized and "scan" in serialized
+        ),
+    }
+    proposal_terms = {
+        "FloorInertia": lambda formula: (
+            "at_floor" in formula and "goto_lab" in formula and "'" in formula
+        ),
+        "LaboratoryInertia": lambda formula: (
+            "at_lab" in formula and "goto_floor" in formula and "'" in formula
+        ),
+        "BarcodeBecomesValid": lambda formula: (
+            "barcode_ok" in formula and "scan" in formula and "F" in formula
+        ),
+    }
+    proposed_omissions = {
+        name: any(
+            item.get("category") == "missing_assumption"
+            and item.get("proposal", {}).get("action") == "add_assumption"
+            and predicate(item.get("proposal", {}).get("formal_def", ""))
+            for item in findings
+        )
+        for name, predicate in proposal_terms.items()
+    }
     return {
         "finding_count": len(findings),
         "detects_missing_assumption": assumption_finding,
-        "references_expected_omission": references_omission,
-        "proposes_expected_formula_shape": valid_candidate,
-        "strict_correctness": assumption_finding and references_omission and valid_candidate,
+        "detects_expected_omissions": omission_terms,
+        "proposes_expected_omissions": proposed_omissions,
+        "strict_correctness": (
+            assumption_finding
+            and all(omission_terms.values())
+            and all(proposed_omissions.values())
+        ),
     }
 
 
@@ -123,8 +161,9 @@ def main():
             metrics[name].update(report_metrics(json.loads(Path(report_file).read_text())))
 
     metrics["correctness_definition"] = (
-        "Strict correctness requires a missing_assumption finding that references "
-        "the omitted barcode responsiveness assumption and proposes its expected formula shape."
+        "Strict correctness requires missing_assumption findings for FloorInertia, "
+        "LaboratoryInertia, and BarcodeBecomesValid, with references and candidate "
+        "formulas matching all three omitted assumptions."
     )
     metrics["completed_at_epoch"] = time.time()
     Path(args.metrics).write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
