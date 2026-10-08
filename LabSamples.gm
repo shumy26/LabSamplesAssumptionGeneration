@@ -39,62 +39,62 @@ Initialization [SystemStart]
 Goal Maintain [ExclusiveNavigation]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot cannot issue commands to navigate to the floor and the lab simultaneously.
-  FormalDef: !(goto_floor & goto_lab)
+  FormalDef: G (!(goto_floor & goto_lab))
 
 Goal Maintain [ScanRequiresAuthorizedSampleAtFloor]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Scanning is only permitted if the robot is at the floor, an authorization is present, the barcode is not yet OK, and human pickup is not happening.
-  FormalDef: scan -> (at_floor & auth_present & !barcode_ok & !human_pickup)
+  FormalDef: G (scan -> (at_floor & auth_present & !barcode_ok & !human_pickup))
 
 Goal Maintain [LabNavigationRequiresSample]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Navigation to the lab can only occur if the barcode is OK or the robot is already not at the floor.
-  FormalDef: goto_lab -> (barcode_ok | !at_floor)
+  FormalDef: G (goto_lab -> (barcode_ok | !at_floor))
 
 Goal Maintain [NavigationPersistence]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Once a valid request is being handled or the robot is in transit to the lab, the goto_lab command must persist until arrival.
-  FormalDef: ((request & barcode_ok & at_floor & !human_pickup) | (goto_lab & !at_lab & !human_pickup)) -> goto_lab'
+  FormalDef: G (((request & barcode_ok & at_floor & !human_pickup) | (goto_lab & !at_lab & !human_pickup)) -> goto_lab')
 
 Goal Maintain [LoadRequiresLabSample]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot can only load the machine if it is at the lab and the barcode is OK.
-  FormalDef: load_machine -> (at_lab & barcode_ok & !human_pickup)
+  FormalDef: G (load_machine -> (at_lab & barcode_ok & !human_pickup))
 
 Goal Maintain [LoadWhenReady]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: If the robot is at the lab and the barcode is OK, it must initiate the loading process.
-  FormalDef: (at_lab & barcode_ok & !human_pickup) -> load_machine
+  FormalDef: G ((at_lab & barcode_ok & !human_pickup) -> load_machine)
 
 Goal Maintain [NoPrematureReturn]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot cannot return to the floor while it holds a valid sample at the lab.
-  FormalDef: (at_lab & barcode_ok & !human_pickup) -> !goto_floor
+  FormalDef: G ((at_lab & barcode_ok & !human_pickup) -> !goto_floor)
 
 Goal Maintain [ReturnAfterProcessing]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Once at the lab and the sample is consumed (or picked up), the robot must initiate return to the floor in the next step.
-  FormalDef: (at_lab & (!barcode_ok | human_pickup)) -> goto_floor'
+  FormalDef: G ((at_lab & (!barcode_ok | human_pickup)) -> goto_floor')
 
 Goal Maintain [ReturnPersistence]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The return command must persist until the robot arrives at the floor.
-  FormalDef: (goto_floor & !at_floor) -> goto_floor'
+  FormalDef: G ((goto_floor & !at_floor) -> goto_floor')
 
 Goal Maintain [IdleNavigation]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: If idle at the floor without a request, do not initiate navigation to the lab.
-  FormalDef: (!request & at_floor & !goto_lab & !goto_floor) -> !goto_lab'
+  FormalDef: G ((!request & at_floor & !goto_lab & !goto_floor) -> !goto_lab')
 
 Goal Maintain [IdleReturn]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: If idle at the floor without a request, do not initiate navigation to the floor.
-  FormalDef: (!request & at_floor & !goto_lab & !goto_floor) -> !goto_floor'
+  FormalDef: G ((!request & at_floor & !goto_lab & !goto_floor) -> !goto_floor')
 
 Goal Maintain [ActionsAreLogged]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Any proactive action (scan, navigation, loading) must trigger the logging event.
-  FormalDef: (scan | goto_floor | goto_lab | load_machine) -> log_event
+  FormalDef: G ((scan | goto_floor | goto_lab | load_machine) -> log_event)
 
 # --------------------------------------------------------------------
 # 2. GOAL ACHIEVE (System Liveness Guarantees)

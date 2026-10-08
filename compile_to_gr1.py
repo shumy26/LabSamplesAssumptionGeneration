@@ -19,7 +19,7 @@ def flatten_predicate(match):
 def clean_formula(formula):
     """Flatten atoms and normalize the infix operators accepted by Slugs."""
     cleaned = re.sub(r'([A-Za-z0-9_]+)\(([^)]+)\)', flatten_predicate, formula)
-    cleaned = re.sub(r'\b[FG]\s+', '', cleaned)
+    # We no longer indiscriminately strip [FG] here so we can safely parse G(...) wrappers later
     return cleaned.replace('&&', '&').replace('||', '|').strip()
 
 
@@ -85,6 +85,29 @@ def add_owned_variables(formula, owner, owners):
                 f"{previous_owner} and {owner}"
             )
 
+def unwrap_G(formula_str):
+    """Safely removes an outer 'G' operator and its matching parentheses if they wrap the entire formula."""
+    s = formula_str.strip()
+    if s.startswith('G ') or s.startswith('G('):
+        s = s[1:].strip()
+        if s.startswith('(') and s.endswith(')'):
+            lvl = 0
+            for i, c in enumerate(s):
+                if c == '(':
+                    lvl += 1
+                elif c == ')':
+                    lvl -= 1
+                
+                # If parentheses level drops to 0 before the end, 
+                # they do not wrap the whole formula (e.g., "(A) & (B)")
+                if lvl == 0 and i < len(s) - 1:
+                    break
+            else:
+                # Loop completed without breaking, meaning the outer parentheses match perfectly
+                s = s[1:-1].strip()
+        return s
+    return s
+
 def generate_slugs(input_file, output_file):
     with open(input_file, 'r') as f:
         content = f.read()
@@ -138,10 +161,13 @@ def generate_slugs(input_file, output_file):
                 sys_init.extend(init_conditions)
             continue
 
+        # Safely extract formula from G(...) wrappers
+        unwrapped_formula = unwrap_G(flat_formula)
+
         # 2. Pure Liveness Assumption or System Guarantee
-        response = split_response(formal_def)
-        if response is None and re.match(r'^F\s+', formal_def):
-            clean_live = clean_formula(re.sub(r'^F\s+', '', formal_def))
+        response = split_response(unwrapped_formula)
+        if response is None and re.match(r'^F\s+', unwrapped_formula):
+            clean_live = re.sub(r'^F\s+', '', unwrapped_formula).strip()
             if header.startswith("Assumption"):
                 env_liveness.append(clean_live)
             else:
@@ -149,8 +175,8 @@ def generate_slugs(input_file, output_file):
 
         # 3. Response Pattern (Liveness: A -> F B)
         elif response is not None:
-            lhs = clean_formula(response[0])
-            rhs = clean_formula(response[1])
+            lhs = response[0].strip()
+            rhs = response[1].strip()
             
             if header.startswith("Assumption"):
                 monitor_name = make_monitor_name(header, "env")
@@ -167,13 +193,13 @@ def generate_slugs(input_file, output_file):
                 
         # 4. Safety, Invariants, Mutexes, and Frame Conditions
         elif header.startswith('Goal') or header.startswith('Assumption'):
-            if "->" in flat_formula:
-                parts = flat_formula.split("->")
+            if "->" in unwrapped_formula:
+                parts = unwrapped_formula.split("->", 1)
                 lhs = parts[0].strip()
-                rhs = parts[1].replace('G ', '').strip()
+                rhs = parts[1].strip()
                 formula = f"!({lhs}) | ({rhs})"
             else:
-                formula = flat_formula
+                formula = unwrapped_formula
                 
             if header.startswith("Assumption"):
                 env_trans.append(formula)
