@@ -44,9 +44,26 @@ def report_metrics(report):
     }
 
 
+def run_local_review(report_file, markdown_file, include_goal_model):
+    command = [
+        sys.executable,
+        "llm_checker.py",
+        "--report",
+        report_file,
+        "--markdown",
+        markdown_file,
+    ]
+    if not include_goal_model:
+        command.append("--without-goal-model")
+    started = time.perf_counter()
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    return result, time.perf_counter() - started
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run and measure the local Gemma GR(1) review.")
-    parser.add_argument("--local-report", default="llm_review.json")
+    parser.add_argument("--without-goal-report", default="llm_review_without_goal.json")
+    parser.add_argument("--with-goal-report", default="llm_review.json")
     parser.add_argument("--metrics", default="experiment_metrics.json")
     args = parser.parse_args()
 
@@ -55,7 +72,8 @@ def main():
         "expected_ground_truth": EXPECTED,
         "started_at_epoch": time.time(),
         "model": "gemma4:12b",
-        "local": {},
+        "without_goal_model": {},
+        "with_goal_model": {},
     }
 
     pipeline_started = time.perf_counter()
@@ -87,20 +105,22 @@ def main():
     )
     metrics["pipeline_exit_code"] = pipeline.returncode
 
-    Path(args.local_report).unlink(missing_ok=True)
-    local, local_seconds = run([
-        sys.executable,
-        "llm_checker.py",
-        "--report",
-        args.local_report,
-        "--markdown",
-        "llm_review.md",
-    ])
-    metrics["local"]["elapsed_seconds"] = round(local_seconds, 3)
-    metrics["local"]["exit_code"] = local.returncode
-    metrics["local"]["report_available"] = local.returncode == 0 and Path(args.local_report).exists()
-    if metrics["local"]["report_available"]:
-        metrics["local"].update(report_metrics(json.loads(Path(args.local_report).read_text())))
+    variants = [
+        ("without_goal_model", args.without_goal_report, "llm_review_without_goal.md", False),
+        ("with_goal_model", args.with_goal_report, "llm_review.md", True),
+    ]
+    for name, report_file, markdown_file, include_goal_model in variants:
+        Path(report_file).unlink(missing_ok=True)
+        review, review_seconds = run_local_review(
+            report_file,
+            markdown_file,
+            include_goal_model,
+        )
+        metrics[name]["elapsed_seconds"] = round(review_seconds, 3)
+        metrics[name]["exit_code"] = review.returncode
+        metrics[name]["report_available"] = review.returncode == 0 and Path(report_file).exists()
+        if metrics[name]["report_available"]:
+            metrics[name].update(report_metrics(json.loads(Path(report_file).read_text())))
 
     metrics["correctness_definition"] = (
         "Strict correctness requires a missing_assumption finding that references "
@@ -109,7 +129,11 @@ def main():
     metrics["completed_at_epoch"] = time.time()
     Path(args.metrics).write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(metrics, indent=2))
-    return 0 if pipeline.returncode == 0 else pipeline.returncode
+    review_failed = any(
+        metrics[name]["exit_code"] != 0
+        for name, _, _, _ in variants
+    )
+    return 1 if pipeline.returncode or review_failed else 0
 
 
 if __name__ == "__main__":

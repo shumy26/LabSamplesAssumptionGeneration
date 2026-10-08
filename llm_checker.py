@@ -50,7 +50,8 @@ def parse_json_response(content):
     return json.loads(content)
 
 
-def build_review_prompt(context):
+def build_review_prompt(context, include_goal_model=True):
+    goal_model = context["goal_model"] if include_goal_model else "[Goal Model omitted from LLM context.]"
     return f"""You are a reviewer for a research workflow that translates robotic mission descriptions into GR(1).
 Analyze the supplied Goal Model, GR(1) specification, Slugs result, and counter-strategy if present.
 Do not modify files and do not assume that realizability means correctness.
@@ -89,7 +90,7 @@ Return ONLY valid JSON with this shape:
 }}
 
 GOAL MODEL:
-{context['goal_model']}
+{goal_model}
 
 STRUCTURED GR(1) MODEL:
 {context['structured_slugs']}
@@ -108,8 +109,8 @@ COUNTER-STRATEGY:
 """
 
 
-def ask_ollama(model, endpoint, context):
-    prompt = build_review_prompt(context)
+def ask_ollama(model, endpoint, context, include_goal_model=True):
+    prompt = build_review_prompt(context, include_goal_model)
     payload = json.dumps({
         "model": model,
         "stream": False,
@@ -220,6 +221,13 @@ def main():
     parser.add_argument("--parser", default="slugs/tools/StructuredSlugsParser/compiler.py")
     parser.add_argument("--slugs", default="./slugs/src/slugs")
     parser.add_argument("--model", default="gemma4:12b")
+    parser.add_argument(
+        "--without-goal-model",
+        dest="include_goal_model",
+        action="store_false",
+        help="Omit the Goal Model from the LLM prompt while still using it for compilation.",
+    )
+    parser.set_defaults(include_goal_model=True)
     parser.add_argument("--endpoint", default="http://127.0.0.1:11434")
     parser.add_argument("--context-size", type=int, default=8192)
     parser.add_argument("--report", default="llm_review.json")
