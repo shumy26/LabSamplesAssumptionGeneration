@@ -1,0 +1,49 @@
+{
+  "summary": "The specification is unrealizable due to a missing environment assumption ensuring that scanning eventually yields a valid barcode, preventing the system from ever fulfilling its liveness guarantees when requests occur.",
+  "findings": [
+    {
+      "category": "missing_assumption",
+      "severity": "high",
+      "evidence": "Assumption [BarcodeReaderCausality], counter-strategy states 1 -> 4, and Goal Achieve [MissionCompletion]",
+      "rationale": "BarcodeReaderCausality prevents barcode_ok without scan, but no assumption guarantees that scanning ever causes barcode_ok to become true, leaving the system trapped.",
+      "proposal": {
+        "action": "add_assumption",
+        "header": "BarcodeScanSuccess",
+        "informal_def": "Scanning an authorized sample at the floor eventually yields a valid barcode.",
+        "formal_def": "(scan & auth_present) -> F barcode_ok",
+        "variables": [
+          "scan",
+          "auth_present",
+          "barcode_ok"
+        ]
+      },
+      "confidence": 0.95
+    },
+    {
+      "category": "missing_assumption",
+      "severity": "medium",
+      "evidence": "Goal Achieve [MissionCompletion] vs. request and auth_present inputs",
+      "rationale": "The environment can keep request and auth_present asserted persistently while never setting barcode_ok or permitting loading, violating system liveness.",
+      "proposal": {
+        "action": "add_assumption",
+        "header": "RequestStabilityOrCompletion",
+        "informal_def": "Requests eventually drop or allow progress if the system attempts processing.",
+        "formal_def": "",
+        "variables": [
+          "request",
+          "auth_present"
+        ]
+      },
+      "confidence": 0.8
+    }
+  ],
+  "human_questions": [
+    "Should scanning an authorized sample at the floor deterministically produce barcode_ok in the next step, or eventually?",
+    "Can a scan fail due to an invalid barcode, and if so, how should the robot handle or report the rejection?"
+  ],
+  "model": "gemini-3.8-flash",
+  "provider": "gemini",
+  "realizability": "unrealizable",
+  "elapsed_seconds": 5.643,
+  "request_seconds": 5.363
+}

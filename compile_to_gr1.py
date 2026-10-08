@@ -1,3 +1,4 @@
+import argparse
 import re
 
 
@@ -108,7 +109,7 @@ def unwrap_G(formula_str):
         return s
     return s
 
-def generate_slugs(input_file, output_file):
+def generate_slugs(input_file='LabSamples.gm', output_file='LabSamples.structuredslugs'):
     with open(input_file, 'r') as f:
         content = f.read()
 
@@ -244,4 +245,8 @@ def generate_slugs(input_file, output_file):
     print(f"Goal Model successfully compiled to {output_file}")
 
 if __name__ == "__main__":
-    generate_slugs('LabSamples.gm', 'LabSamples.structuredslugs')
+    parser = argparse.ArgumentParser(description='Compile a goal model into structured Slugs input.')
+    parser.add_argument('input_file', nargs='?', default='LabSamples.gm')
+    parser.add_argument('output_file', nargs='?', default='LabSamples.structuredslugs')
+    arguments = parser.parse_args()
+    generate_slugs(arguments.input_file, arguments.output_file)

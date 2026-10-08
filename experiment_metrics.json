@@ -1,0 +1,29 @@
+{
+  "experiment": "intentional omission detection",
+  "expected_ground_truth": {
+    "omitted_assumption": "BarcodeBecomesValid",
+    "omitted_formula": "(auth_present & scan) -> F barcode_ok"
+  },
+  "started_at_epoch": 1791472485.573478,
+  "local": {
+    "elapsed_seconds": 300.631,
+    "exit_code": 1,
+    "report_available": false
+  },
+  "gemini": {
+    "elapsed_seconds": 5.772,
+    "exit_code": 0,
+    "status": "completed",
+    "report_available": true,
+    "finding_count": 2,
+    "detects_missing_assumption": true,
+    "references_expected_omission": true,
+    "proposes_expected_formula_shape": true,
+    "strict_correctness": true
+  },
+  "pipeline_seconds": 0.092,
+  "slugs_result": "unrealizable",
+  "pipeline_exit_code": 0,
+  "correctness_definition": "Strict correctness requires a missing_assumption finding that references the omitted barcode responsiveness assumption and proposes its expected formula shape.",
+  "completed_at_epoch": 1791472792.1118972
+}

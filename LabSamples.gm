@@ -155,8 +155,3 @@ Assumption [FloorArrival]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: The environment guarantees that commanding the robot to the floor will eventually result in arrival.
   FormalDef: goto_floor -> F at_floor
-
-Assumption [BarcodeBecomesValid]
-  Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
-  InformalDef: The environment guarantees that if authorization is present and a scan is executed, the barcode will eventually become valid.
-  FormalDef: (auth_present & scan) -> F barcode_ok
