@@ -59,7 +59,7 @@ Use every supplied artifact as evidence: the natural-language mission, Goal Mode
 
 Critically evaluate the specification for operational resilience against non-ideal physical realities. Real-world environments are imperfect: sensors may fail to read, human operators may abandon tasks, and expected environmental triggers might never occur. Look for missing timeouts, fallback states, or boundary conditions needed to prevent the system from getting permanently stuck (starvation) when the ideal sequence of events is disrupted.
 
-You are not constrained to a specific number of findings. Identify as many as you can.
+Identify at most three findings. Prioritize missing assumptions and missing atomic propositions that are directly supported by the supplied artifacts.
 
 Identify all your findings from these categories:
 1. missing_assumption: an omitted physical constraint (e.g., location mutex).
@@ -129,6 +129,7 @@ REVIEW_RESPONSE_SCHEMA = {
         "summary": {"type": "string"},
         "findings": {
             "type": "array",
+            "maxItems": 3,
             "items": {
                 "type": "object",
                 "additionalProperties": False,
@@ -170,7 +171,11 @@ REVIEW_RESPONSE_SCHEMA = {
                 },
             },
         },
-        "human_questions": {"type": "array", "items": {"type": "string"}},
+        "human_questions": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {"type": "string"},
+        },
     },
 }
 
@@ -182,9 +187,9 @@ def request_ollama(model, endpoint, messages, context_size):
         "format": REVIEW_RESPONSE_SCHEMA,
         "messages": messages,
         "options": {
-            "temperature": 0.0,
+            "temperature": 0.1,
             "num_ctx": context_size,
-            "num_predict": 2000,
+            "num_predict": 3000,
         },
         "think": False,
     }).encode("utf-8")
@@ -335,7 +340,7 @@ def main():
     )
     parser.set_defaults(include_goal_model=True)
     parser.add_argument("--endpoint", default="http://127.0.0.1:11434")
-    parser.add_argument("--context-size", type=int, default=8192)
+    parser.add_argument("--context-size", type=int, default=16384)
     parser.add_argument("--report", default="llm_review.json")
     parser.add_argument("--markdown", default="llm_review.md")
     return run_review(parser.parse_args())
