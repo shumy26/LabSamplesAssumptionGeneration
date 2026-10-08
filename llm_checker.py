@@ -175,19 +175,15 @@ REVIEW_RESPONSE_SCHEMA = {
 }
 
 
-def ask_ollama(model, endpoint, context, include_goal_model=True):
-    prompt = build_review_prompt(context, include_goal_model)
+def request_ollama(model, endpoint, messages, context_size):
     payload = json.dumps({
         "model": model,
         "stream": False,
         "format": REVIEW_RESPONSE_SCHEMA,
-        "messages": [
-            {"role": "system", "content": "Return only the requested JSON review report."},
-            {"role": "user", "content": prompt},
-        ],
+        "messages": messages,
         "options": {
-            "temperature": 0.1,
-            "num_ctx": context["context_size"],
+            "temperature": 0.0,
+            "num_ctx": context_size,
             "num_predict": 2000,
         },
         "think": False,
@@ -208,7 +204,44 @@ def ask_ollama(model, endpoint, context, include_goal_model=True):
         ) from error
     except (urllib.error.URLError, TimeoutError) as error:
         raise RuntimeError(f"Could not reach Ollama at {endpoint}: {error}") from error
-    return parse_json_response(result.get("message", {}).get("content", ""))
+    return result.get("message", {}).get("content", "")
+
+
+def ask_ollama(model, endpoint, context, include_goal_model=True):
+    prompt = build_review_prompt(context, include_goal_model)
+    content = request_ollama(
+        model,
+        endpoint,
+        [
+            {"role": "system", "content": "Return only the requested JSON review report."},
+            {"role": "user", "content": prompt},
+        ],
+        context["context_size"],
+    )
+    try:
+        return parse_json_response(content)
+    except (ValueError, json.JSONDecodeError) as first_error:
+        repair_prompt = f"""Convert the following malformed model response into one valid JSON object matching the required review schema.
+Do not add analysis, markdown, comments, or new findings. Preserve the available findings and use empty strings or empty arrays only when a required field is missing.
+
+MALFORMED RESPONSE:
+{content}
+"""
+        repaired_content = request_ollama(
+            model,
+            endpoint,
+            [
+                {"role": "system", "content": "Return only valid JSON matching the supplied response schema."},
+                {"role": "user", "content": repair_prompt},
+            ],
+            context["context_size"],
+        )
+        try:
+            return parse_json_response(repaired_content)
+        except (ValueError, json.JSONDecodeError) as repair_error:
+            raise ValueError(
+                f"Model returned invalid JSON and the repair pass also failed: {repair_error}"
+            ) from first_error
 
 
 def write_markdown(report, output_file):
