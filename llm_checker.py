@@ -57,7 +57,9 @@ def build_review_prompt(context, include_goal_model=True):
 
 Use every supplied artifact as evidence: the natural-language mission, Goal Model, design rules, compiler contract, generated structured SLUGS model, parser output, realizability result, and counter-strategy. Do not assume that a realizable specification is physically correct. The generated artifacts describe what the current workflow actually synthesizes; identify mismatches between them and the mission.
 
-Identify up to three findings from these categories:
+Critically evaluate the specification for operational resilience against non-ideal physical realities. Real-world environments are imperfect: sensors may fail to read, human operators may abandon tasks, and expected environmental triggers might never occur. Look for missing timeouts, fallback states, or boundary conditions needed to prevent the system from getting permanently stuck (starvation) when the ideal sequence of events is disrupted.
+
+Identify all your findings from these categories:
 1. missing_assumption: an omitted physical constraint (e.g., location mutex).
 2. missing_atomic_proposition: a system state or event needed but not defined.
 3. contradiction: conflicting assumptions or requirements causing unrealizability.
