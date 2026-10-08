@@ -121,12 +121,66 @@ PROPOSAL REQUIREMENTS:
 """
 
 
+REVIEW_RESPONSE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["summary", "findings", "human_questions"],
+    "properties": {
+        "summary": {"type": "string"},
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["category", "severity", "evidence", "rationale", "proposal", "confidence"],
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "missing_assumption",
+                            "missing_atomic_proposition",
+                            "contradiction",
+                            "unjustified_strengthening",
+                        ],
+                    },
+                    "severity": {"type": "string", "enum": ["low", "medium", "high"]},
+                    "evidence": {"type": "string"},
+                    "rationale": {"type": "string"},
+                    "proposal": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["action", "header", "informal_def", "formal_def", "variables"],
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "enum": [
+                                    "add_assumption",
+                                    "add_atomic_proposition",
+                                    "revise_assumption",
+                                    "none",
+                                ],
+                            },
+                            "header": {"type": "string"},
+                            "informal_def": {"type": "string"},
+                            "formal_def": {"type": "string"},
+                            "variables": {"type": "array", "items": {"type": "string"}},
+                        },
+                    },
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                },
+            },
+        },
+        "human_questions": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+
 def ask_ollama(model, endpoint, context, include_goal_model=True):
     prompt = build_review_prompt(context, include_goal_model)
     payload = json.dumps({
         "model": model,
         "stream": False,
-        "format": "json",
+        "format": REVIEW_RESPONSE_SCHEMA,
         "messages": [
             {"role": "system", "content": "Return only the requested JSON review report."},
             {"role": "user", "content": prompt},
