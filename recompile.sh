@@ -1,28 +1,35 @@
-##!/usr/bin/env bash
+#!/usr/bin/env bash
 
-python3 compile_to_gr1.py
-python3 slugs/tools/StructuredSlugsParser/compiler.py LabSamples.structuredslugs > LabSamples.slugsin
+python3 compile_to_strix.py LabSamples.gm LabSamples_strix
 
-echo "Checking realizability..."
+FORMULA=$(cat LabSamples_strix_formula.txt)
+INS=$(cat LabSamples_strix_ins.txt)
+OUTS=$(cat LabSamples_strix_outs.txt)
 
-CHECK_REALIZABILITY=$(./slugs/src/slugs LabSamples.slugsin 2>&1)
+echo "Checking realizability with Strix..."
 
-# 3. Route the execution based on the result
-if [[ "$CHECK_REALIZABILITY" == *"Specification is realizable"* ]]; then
+# Try to run strix. If not installed, it will error out.
+CHECK_REALIZABILITY=$(strix --realizability -f "$FORMULA" --ins="$INS" --outs="$OUTS" 2>&1)
+
+if [[ "$CHECK_REALIZABILITY" == *"REALIZABLE"* && "$CHECK_REALIZABILITY" != *"UNREALIZABLE"* ]]; then
     echo "Result: REALIZABLE! Synthesizing controller..."
-    ./slugs/src/slugs --explicitStrategy --jsonOutput LabSamples.slugsin > controller.json
-    echo "Success: Saved to controller.json"
+    strix -o hoa -f "$FORMULA" --ins="$INS" --outs="$OUTS" > controller.hoa
+    echo "Success: Saved to controller.hoa"
     python3 llm_checker.py \
         --model "${OLLAMA_MODEL:-gemma4:26b}"
 
-elif [[ "$CHECK_REALIZABILITY" == *"Specification is unrealizable"* ]]; then
+elif [[ "$CHECK_REALIZABILITY" == *"UNREALIZABLE"* ]]; then
     echo "Result: UNREALIZABLE! Extracting counter-strategy..."
-    ./slugs/src/slugs --counterStrategy LabSamples.slugsin > counter_strategy.txt
-    echo "Failed: Environment winning strategy saved to counter_strategy.txt"
+    
+    # Run the Dual Game for the counter strategy
+    # Negate the formula and swap inputs and outputs
+    strix -o hoa -f "!($FORMULA)" --ins="$OUTS" --outs="$INS" > counter_strategy.hoa
+    
+    echo "Failed: Environment winning strategy saved to counter_strategy.hoa"
     python3 llm_checker.py \
         --model "${OLLAMA_MODEL:-gemma4:26b}"
 
 else
-    echo "An unexpected error occurred during the SLUGS check:"
+    echo "An unexpected error occurred during the Strix check (is Strix installed?):"
     echo "$CHECK_REALIZABILITY"
 fi

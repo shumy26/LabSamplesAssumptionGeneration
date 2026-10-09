@@ -13,25 +13,25 @@ def run_command(command):
     return result.returncode, result.stdout + result.stderr
 
 
-def classify_slugs(slugs_executable, slugs_input):
-    _, output = run_command([slugs_executable, slugs_input])
-    if "Specification is realizable" in output:
+def classify_strix(formula_file, ins_file, outs_file):
+    formula = Path(formula_file).read_text(encoding="utf-8").strip()
+    ins = Path(ins_file).read_text(encoding="utf-8").strip()
+    outs = Path(outs_file).read_text(encoding="utf-8").strip()
+    code, output = run_command(["strix", "--realizability", "-f", formula, "--ins=" + ins, "--outs=" + outs])
+    if "REALIZABLE" in output and "UNREALIZABLE" not in output:
         return "realizable", output
-    if "Specification is unrealizable" in output:
+    if "UNREALIZABLE" in output:
         return "unrealizable", output
-    raise RuntimeError(f"Slugs returned an unknown result:\n{output}")
+    return "unknown", output
 
 
-def compile_goal_model(goal_model, structured_slugs, parser):
+def compile_goal_model(goal_model, prefix):
     code, output = run_command([
         sys.executable,
-        "compile_to_gr1.py",
+        "compile_to_strix.py",
         goal_model,
-        structured_slugs,
+        prefix,
     ])
-    if code:
-        raise RuntimeError(output)
-    code, output = run_command([sys.executable, parser, structured_slugs])
     if code:
         raise RuntimeError(output)
     return output
@@ -63,7 +63,7 @@ def build_review_prompt(context, include_goal_model=True, included_documents=Non
 
     return f"""You are an expert reviewer for a research workflow translating robotic mission descriptions into GR(1) specifications via KAOS Goal Models.
 
-Use every supplied artifact as evidence: the natural-language mission, Goal Model, design rules, compiler contract, generated structured SLUGS model, parser output, realizability result, and counter-strategy. Do not assume that a realizable specification is physically correct. The generated artifacts describe what the current workflow actually synthesizes; identify mismatches between them and the mission.
+Use every supplied artifact as evidence: the natural-language mission, Goal Model, design rules, compiler contract, generated Strix LTL formula, Strix inputs and outputs, realizability result, and counter-strategy. Do not assume that a realizable specification is physically correct. The generated artifacts describe what the current workflow actually synthesizes; identify mismatches between them and the mission.
 
 Critically evaluate the specification for operational resilience against non-ideal physical realities. Real-world environments are imperfect: sensors may fail to read, human operators may abandon tasks, and expected environmental triggers might never occur. Look for missing timeouts, fallback states, or boundary conditions needed to prevent the system from getting permanently stuck (starvation) when the ideal sequence of events is disrupted.
 
@@ -108,11 +108,12 @@ NATURAL-LANGUAGE MISSION:
 GOAL MODEL:
 {goal_model}
 
-GENERATED STRUCTURED SLUGS MODEL:
-{document('structured_slugs', 'Generated structured SLUGS model')}
+STRIX LTL FORMULA:
+{document('strix_formula', 'Strix LTL formula')}
 
-PARSER OUTPUT:
-{document('slugs_input', 'Parser output')}
+STRIX INPUTS AND OUTPUTS:
+Inputs: {document('strix_ins', 'Strix inputs')}
+Outputs: {document('strix_outs', 'Strix outputs')}
 
 REALIZABILITY RESULT:
 {context['realizability_result']}
@@ -280,33 +281,38 @@ def write_markdown(report, output_file):
 
 
 def run_review(args):
-    parser_output = compile_goal_model(args.goal_model, args.structured_slugs, args.parser)
-    Path(args.slugs_input).write_text(parser_output, encoding="utf-8")
-    status, slugs_output = classify_slugs(args.slugs, args.slugs_input)
+    compile_goal_model(args.goal_model, "LabSamples_strix")
+    status, strix_output = classify_strix(args.strix_formula, args.strix_ins, args.strix_outs)
     counter_strategy = ""
     if status == "unrealizable":
+        formula = Path(args.strix_formula).read_text(encoding="utf-8").strip()
+        ins = Path(args.strix_ins).read_text(encoding="utf-8").strip()
+        outs = Path(args.strix_outs).read_text(encoding="utf-8").strip()
         code, counter_strategy = run_command([
-            args.slugs,
-            "--counterStrategy",
-            args.slugs_input,
+            "strix",
+            "-o", "hoa",
+            "-f", f"!({formula})",
+            "--ins=" + outs,
+            "--outs=" + ins,
         ])
         if code:
-            raise RuntimeError(counter_strategy)
+            counter_strategy = "Error generating counter-strategy. Is Strix installed?\n" + counter_strategy
         Path(args.counter_strategy).write_text(counter_strategy, encoding="utf-8")
 
     counter_strategy_excerpt = counter_strategy
     if len(counter_strategy_excerpt) > args.counter_strategy_chars:
         counter_strategy_excerpt = (
             counter_strategy_excerpt[: args.counter_strategy_chars]
-            + "\n[repetitive counter-strategy states omitted; see counter_strategy.txt]\n"
+            + "\n[repetitive counter-strategy states omitted; see counter_strategy.hoa]\n"
         )
 
     context = {
         "mission_text": Path(args.mission_text).read_text(encoding="utf-8"),
         "goal_model": Path(args.goal_model).read_text(encoding="utf-8"),
-        "structured_slugs": Path(args.structured_slugs).read_text(encoding="utf-8"),
-        "slugs_input": Path(args.slugs_input).read_text(encoding="utf-8"),
-        "realizability_result": slugs_output,
+        "strix_formula": Path(args.strix_formula).read_text(encoding="utf-8") if Path(args.strix_formula).exists() else "",
+        "strix_ins": Path(args.strix_ins).read_text(encoding="utf-8") if Path(args.strix_ins).exists() else "",
+        "strix_outs": Path(args.strix_outs).read_text(encoding="utf-8") if Path(args.strix_outs).exists() else "",
+        "realizability_result": strix_output,
         "counter_strategy": counter_strategy,
         "counter_strategy_excerpt": counter_strategy_excerpt,
         "rules": Path(args.rules_file).read_text(encoding="utf-8"),
@@ -320,8 +326,9 @@ def run_review(args):
         included_documents={
             "mission_text": args.include_mission_text,
             "rules": args.include_rules,
-            "structured_slugs": args.include_structured_slugs,
-            "slugs_input": args.include_slugs_input,
+            "strix_formula": args.include_strix_formula,
+            "strix_ins": args.include_strix_ins,
+            "strix_outs": args.include_strix_outs,
             "counter_strategy_excerpt": args.include_counter_strategy,
         },
     )
@@ -340,13 +347,12 @@ def main():
     )
     parser.add_argument("--goal-model", default="LabSamples.gm")
     parser.add_argument("--mission-text", default="LabSamplesNL.txt")
-    parser.add_argument("--counter-strategy", default="counter_strategy.txt")
+    parser.add_argument("--counter-strategy", default="counter_strategy.hoa")
     parser.add_argument("--counter-strategy-chars", type=int, default=3500)
     parser.add_argument("--rules-file", default="rulesgm.txt")
-    parser.add_argument("--structured-slugs", default="LabSamples.structuredslugs")
-    parser.add_argument("--slugs-input", default="LabSamples.slugsin")
-    parser.add_argument("--parser", default="slugs/tools/StructuredSlugsParser/compiler.py")
-    parser.add_argument("--slugs", default="./slugs/src/slugs")
+    parser.add_argument("--strix-formula", default="LabSamples_strix_formula.txt")
+    parser.add_argument("--strix-ins", default="LabSamples_strix_ins.txt")
+    parser.add_argument("--strix-outs", default="LabSamples_strix_outs.txt")
     parser.add_argument("--model", default="gemma4:26b")
     parser.add_argument(
         "--without-goal-model",
@@ -358,8 +364,9 @@ def main():
     for option, destination, label in [
         ("mission-text", "include_mission_text", "Omit the natural-language mission"),
         ("rules", "include_rules", "Omit the design and compilation rules"),
-        ("structured-slugs", "include_structured_slugs", "Omit the generated structured SLUGS model"),
-        ("slugs-input", "include_slugs_input", "Omit the parser output"),
+        ("strix-formula", "include_strix_formula", "Omit the generated Strix LTL formula"),
+        ("strix-ins", "include_strix_ins", "Omit the Strix input list"),
+        ("strix-outs", "include_strix_outs", "Omit the Strix output list"),
         ("counter-strategy", "include_counter_strategy", "Omit the counter-strategy"),
     ]:
         parser.add_argument(

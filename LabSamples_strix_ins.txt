@@ -1,0 +1,1 @@
+at_floor,at_lab,auth_present,barcode_ok,env_monitor_BarcodeBecomesValid,env_monitor_FloorArrival,env_monitor_LaboratoryArrival,human_pickup,request

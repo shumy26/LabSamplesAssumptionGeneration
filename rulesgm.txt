@@ -42,8 +42,8 @@ Synthesis treats the environment as chaotic and adversarial unless the model con
 
 The header determines which player owns the proposition and which GR(1) section receives its FormalDef:
 
-- Initialization [EnvironmentName] assigns initial values to environment variables. These variables become SLUGS INPUTs.
-- Initialization [SystemName] assigns initial values to system variables. These variables become SLUGS OUTPUTs.
+- Initialization [EnvironmentName] assigns initial values to environment variables. These variables become Strix INPUTs.
+- Initialization [SystemName] assigns initial values to system variables. These variables become Strix OUTPUTs.
 - Assumption [Name] belongs to the environment. Its safety FormalDef becomes an environment transition constraint in [ENV_TRANS].
 - Assumption [Name] with `F B` belongs to the environment and places B directly in [ENV_LIVENESS].
 - Assumption [Name] with `A -> F B` belongs to the environment and places a generated response monitor in [ENV_TRANS] plus the monitor obligation in [ENV_LIVENESS]. Keep the standard `Assumption [Name]` header used by this Goal Model schema.
@@ -52,15 +52,15 @@ The header determines which player owns the proposition and which GR(1) section 
 
 Therefore, every Assumption [Name] leaf is an environment guarantee, whether its FormalDef is safety or liveness, while all Goal, Goal Maintain, and Goal Achieve leaves are system guarantees. A physical response such as arrival, sensor change, or barcode validation must be modeled as an Assumption [Name] with liveness form `A -> F B`, not as a Goal. A controller command such as goto_lab, scan, or load_machine must be modeled as a Goal and owned by a system OUTPUT variable. Never use the header alone to override variable ownership: every atom must still have exactly one matching Initialization declaration.
 
-Compiler contract from compile_to_gr1.py
+Compiler contract from compile_to_strix.py
 
 - The canonical headers are Initialization [Name], Assumption [Name], Goal [Name], Goal Maintain [Name], and Goal Achieve [Name]. The parser also accepts Assumption Achieve [Name], but this workflow should use the canonical Assumption [Name] header and express liveness in FormalDef.
 - Only lines beginning with FormalDef: are compiled. InformalDef and other explanatory text are ignored by the compiler.
 - Initialization formulas define ownership. Variables initialized under an Environment header become INPUTs; variables initialized under a System header become OUTPUTs. Every later atom must have exactly one initialization owner.
-- Predicate(a, b) is flattened to Predicate_a_b. && and || are normalized to & and |. Boolean atoms use identifiers. The supported operators and forms are !, &, |, ->, ', F, G, True, and False.
+- Predicate(a, b) is flattened to Predicate_a_b. && and || are normalized to & and |. Boolean atoms use identifiers. The supported operators and forms are !, &, |, ->, X (next), F, G, True, and False.
 - Initialization leaves are state formulas only. Safety formulas may be invariants or implications; implications are compiled as !antecedent | consequent. An outer G(...) wrapper is accepted for safety formulas.
 - Liveness is limited to F B or A -> F B. A -> F B is compiled with an internal response monitor. A and B must use already-owned variables and must not contain arbitrary temporal nesting.
 - Assumptions control environment INPUT transitions and liveness. Goals control system OUTPUT transitions and liveness. Never assign one atom to both players.
-- For direct liveness, the generated structured SLUGS model contains B in the relevant liveness section. For response liveness, it contains the monitor transition and `!monitor` liveness obligation; this is the expected encoding, not a system transition.
-- The generated structured SLUGS model and parser output are the executable authority. Proposed formulas must compile without undefined variables, unsupported temporal nesting, or ownership conflicts.
+- For direct liveness, the generated Strix LTL formula contains B in the relevant liveness section. For response liveness, it contains the monitor transition and `!monitor` liveness obligation; this is the expected encoding, not a system transition.
+- The generated Strix LTL formula is the executable authority. Proposed formulas must compile without undefined variables, unsupported temporal nesting, or ownership conflicts.
 - Candidate changes must match the existing Goal Model vocabulary, preserve the current workflow, and be small enough to review. If a new variable is necessary, specify its owner, initialization value, and model location.

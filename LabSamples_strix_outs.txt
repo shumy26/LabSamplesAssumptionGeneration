@@ -1,0 +1,1 @@
+goto_floor,goto_lab,load_machine,log_event,scan

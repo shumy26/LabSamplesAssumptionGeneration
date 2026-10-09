@@ -154,8 +154,9 @@ def run_local_review(case, model):
         "--goal-model", str(case["goal_model"]),
         "--mission-text", "LabSamplesNL.txt",
         "--rules-file", "rulesgm.txt",
-        "--structured-slugs", str(case["structured_slugs"]),
-        "--slugs-input", str(case["slugs_input"]),
+        "--strix-formula", str(case["strix_formula"]),
+        "--strix-ins", str(case["strix_ins"]),
+        "--strix-outs", str(case["strix_outs"]),
         "--counter-strategy", str(case["counter_strategy"]),
         "--report", str(case["report"]),
         "--markdown", str(case["markdown"]),
@@ -175,7 +176,7 @@ def make_cases(args, root):
         goal_variants.extend(itertools.combinations(names, size))
 
     cases = []
-    document_names = ["mission-text", "rules", "structured-slugs", "slugs-input", "counter-strategy"]
+    document_names = ["mission-text", "rules", "strix-formula", "strix-ins", "strix-outs", "counter-strategy"]
     for trial in range(1, args.trials + 1):
         trial_root = root / f"trial_{trial:03d}"
         models_root = trial_root / "goal_models"
@@ -204,9 +205,10 @@ def make_cases(args, root):
                         "omitted_documents": sorted(omitted_documents),
                         "include_goal_model": include_goal_model,
                         "goal_model": goal_model,
-                        "structured_slugs": artifact_root / "model.structuredslugs",
-                        "slugs_input": artifact_root / "model.slugsin",
-                        "counter_strategy": artifact_root / "counter_strategy.txt",
+                        "strix_formula": artifact_root / "formula.txt",
+                        "strix_ins": artifact_root / "ins.txt",
+                        "strix_outs": artifact_root / "outs.txt",
+                        "counter_strategy": artifact_root / "counter_strategy.hoa",
                         "report": artifact_root / "review.json",
                         "markdown": artifact_root / "review.md",
                     })
