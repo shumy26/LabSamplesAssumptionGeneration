@@ -23,6 +23,18 @@ ASSUMPTIONS = {
     "BarcodeBecomesValid": "(auth_present & scan) -> F barcode_ok",
 }
 
+ASSUMPTION_CONCEPTS = {
+    "LocationMutex": ("floor", "laboratory", "lab", "simultaneously"),
+    "FloorInertia": ("floor", "goto_lab", "leave", "remain"),
+    "LaboratoryInertia": ("laboratory", "lab", "goto_floor", "leave", "remain"),
+    "BarcodeReaderCausality": ("barcode", "scan", "scanner", "reader"),
+    "BarcodePersistence": ("barcode", "load_machine", "machine", "human", "pickup", "remain"),
+    "SampleConsumed": ("load_machine", "machine", "human", "pickup", "consum", "barcode"),
+    "LaboratoryArrival": ("goto_lab", "laboratory", "lab", "arriv", "command"),
+    "FloorArrival": ("goto_floor", "floor", "arriv", "command"),
+    "BarcodeBecomesValid": ("barcode", "auth", "authoriz", "scan", "valid"),
+}
+
 
 def run(command):
     started = time.perf_counter()
@@ -55,25 +67,83 @@ def write_goal_variant(source, destination, removed):
 
 def expected_metrics(report, removed):
     findings = report.get("findings", [])
-    serialized = json.dumps(findings).lower()
     detected = {}
     proposed = {}
+    exact_detected = {}
+    exact_proposed = {}
+    graded = {}
+
+    def relevant_text(finding):
+        return json.dumps(finding, ensure_ascii=True).lower()
+
+    def formula_variables(formula):
+        return {
+            token.lower()
+            for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", formula)
+            if token not in {"f", "g", "true", "false"}
+        }
+
     for name, formula in ASSUMPTIONS.items():
-        detected[name] = name.lower() in serialized or formula.lower().replace("'", "") in serialized
-        proposed[name] = any(
-            item.get("category") == "missing_assumption"
-            and item.get("proposal", {}).get("action") == "add_assumption"
-            and formula.lower().replace("'", "") in item.get("proposal", {}).get("formal_def", "").lower().replace("'", "")
-            for item in findings
-        )
+        normalized_formula = formula.lower().replace("'", "")
+        expected_variables = formula_variables(formula)
+        expected_concepts = ASSUMPTION_CONCEPTS.get(name, ())
+        best_idea_score = 0.0
+        best_proposal_score = 0.0
+        has_exact_idea = False
+        has_exact_proposal = False
+        for finding in findings:
+            text = relevant_text(finding)
+            proposal = finding.get("proposal", {})
+            formal_def = proposal.get("formal_def", "").lower().replace("'", "")
+            variable_overlap = expected_variables & formula_variables(text)
+            concept_overlap = {
+                concept for concept in expected_concepts if concept in text
+            }
+            if name.lower() in text or normalized_formula in text:
+                idea_score = 1.0
+                has_exact_idea = True
+            elif expected_concepts and len(concept_overlap) == len(expected_concepts):
+                idea_score = 0.75
+            elif expected_variables and len(variable_overlap) == len(expected_variables):
+                idea_score = 0.75
+            elif (
+                expected_concepts
+                and len(concept_overlap) >= (len(expected_concepts) + 1) // 2
+            ) or (
+                expected_variables
+                and len(variable_overlap) >= (len(expected_variables) + 1) // 2
+            ):
+                idea_score = 0.5
+            else:
+                idea_score = 0.0
+            if proposal.get("action") == "add_assumption" and normalized_formula in formal_def:
+                proposal_score = 1.0
+                has_exact_proposal = True
+            elif proposal.get("action") == "add_assumption" and idea_score:
+                proposal_score = 0.5
+            else:
+                proposal_score = 0.0
+            best_idea_score = max(best_idea_score, idea_score)
+            best_proposal_score = max(best_proposal_score, proposal_score)
+        detected[name] = best_idea_score > 0
+        proposed[name] = best_proposal_score > 0
+        exact_detected[name] = has_exact_idea
+        exact_proposed[name] = has_exact_proposal
+        graded[name] = max(best_idea_score, best_proposal_score)
     expected = sorted(removed)
+    graded_credit = statistics.mean(graded[name] for name in expected) if expected else 0.0
     return {
         "finding_count": len(findings),
         "detects_expected_omissions": {name: detected[name] for name in expected},
         "proposes_expected_omissions": {name: proposed[name] for name in expected},
+        "exact_detects_expected_omissions": {name: exact_detected[name] for name in expected},
+        "exact_proposes_expected_omissions": {name: exact_proposed[name] for name in expected},
+        "graded_credit_by_assumption": {name: graded[name] for name in expected},
         "evaluated": bool(expected),
+        "graded_credit": round(graded_credit, 4) if expected else None,
+        "any_credit": bool(expected) and graded_credit > 0,
         "strict_correctness": bool(expected)
-        and all(detected[name] and proposed[name] for name in expected),
+        and all(exact_detected[name] and exact_proposed[name] for name in expected),
     }
 
 
@@ -163,6 +233,13 @@ def summarize(results):
             "successful_reviews": sum(item["review_available"] for item in items),
             "review_success_rate": round(sum(item["review_available"] for item in items) / len(items), 4),
             "evaluated_trials": len(evaluated),
+            "any_credit_trials": sum(item["metrics"].get("any_credit", False) for item in evaluated),
+            "any_credit_rate": round(
+                sum(item["metrics"].get("any_credit", False) for item in evaluated) / len(evaluated), 4
+            ) if evaluated else None,
+            "mean_graded_credit": round(
+                statistics.mean(item["metrics"].get("graded_credit", 0) for item in evaluated), 4
+            ) if evaluated else None,
             "strict_correct_trials": sum(item["metrics"]["strict_correctness"] for item in evaluated),
             "strict_correctness_rate": round(
                 sum(item["metrics"]["strict_correctness"] for item in evaluated) / len(evaluated), 4
