@@ -1,86 +1,126 @@
 import json
+import sys
+
+
+def percent(value):
+    return f"{value * 100:.0f}%"
+
+
+def score(value):
+    return f"{value:.2f}"
+
+
+def signed_delta(without_goal, with_goal, formatter):
+    return formatter(without_goal - with_goal)
+
+
+def p_value_label(value):
+    if value is None:
+        return "n/a"
+    if value < 0.001:
+        return "< 0.001"
+    return f"{value:.3f}"
+
+
+def collect_conditions(data):
+    conditions = {}
+    for condition in data.get("by_condition", []):
+        removed = condition.get("removed_assumptions", [])
+        if len(removed) != 1 or condition.get("omitted_documents", []):
+            continue
+        conditions.setdefault(removed[0], {})[condition.get("include_goal_model", False)] = condition
+    return conditions
+
+
+def print_scorecard(data):
+    conditions = collect_conditions(data)
+    print("# Goal Model Ablation Results")
+    print()
+    print("_A compact scorecard: higher is better. Delta means without Goal Model minus with Goal Model._")
+    print()
+    print("| Omitted assumption | Any credit: without | Any credit: with | Delta | Graded credit: without | Graded credit: with | Delta | Strict: without | Strict: with |")
+    print("| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+
+    rows = []
+    for assumption, variants in sorted(conditions.items()):
+        without = variants.get(False, {})
+        with_goal = variants.get(True, {})
+        without_any = without.get("any_credit_rate", 0.0)
+        with_any = with_goal.get("any_credit_rate", 0.0)
+        without_graded = without.get("mean_graded_credit", 0.0)
+        with_graded = with_goal.get("mean_graded_credit", 0.0)
+        without_strict = without.get("strict_correctness_rate", 0.0)
+        with_strict = with_goal.get("strict_correctness_rate", 0.0)
+        rows.append({
+            "assumption": assumption,
+            "any_without": without_any,
+            "any_with": with_any,
+            "graded_without": without_graded,
+            "graded_with": with_graded,
+            "strict_without": without_strict,
+            "strict_with": with_strict,
+        })
+        print(
+            f"| **{assumption}** | {percent(without_any)} | {percent(with_any)} | "
+            f"{signed_delta(without_any, with_any, percent)} | "
+            f"{score(without_graded)} | {score(with_graded)} | "
+            f"{signed_delta(without_graded, with_graded, score)} | "
+            f"{percent(without_strict)} | {percent(with_strict)} |"
+        )
+
+    if rows:
+        average = lambda key: sum(row[key] for row in rows) / len(rows)
+        print(
+            f"| **AVERAGE** | **{percent(average('any_without'))}** | "
+            f"**{percent(average('any_with'))}** | "
+            f"**{signed_delta(average('any_without'), average('any_with'), percent)}** | "
+            f"**{score(average('graded_without'))}** | **{score(average('graded_with'))}** | "
+            f"**{signed_delta(average('graded_without'), average('graded_with'), score)}** | "
+            f"**{percent(average('strict_without'))}** | **{percent(average('strict_with'))}** |"
+        )
+    else:
+        print("| _No single-assumption results found._ | | | | | | | | |")
+
+
+def print_significance(data):
+    print()
+    print("## Statistical Significance")
+    print()
+    print("_Paired Student t-tests across trials. Negative delta means the Goal Model helped._")
+    print()
+    print("| Omitted assumption | Metric | Trials | Mean delta | t | df | p-value |")
+    print("| :--- | :--- | ---: | ---: | ---: | ---: | ---: |")
+
+    found = False
+    for test in data.get("goal_model_significance", []):
+        assumption = ", ".join(test.get("removed_assumptions", [])) or "All assumptions"
+        for metric, label in (("any_credit", "Any credit"), ("graded_credit", "Graded credit"), ("strict_correctness", "Strict correctness")):
+            result = test.get(metric, {})
+            if result.get("insufficient_pairs"):
+                print(f"| **{assumption}** | {label} | < 2 | n/a | n/a | n/a | n/a |")
+                continue
+            found = True
+            print(
+                f"| **{assumption}** | {label} | {test.get('paired_trials', 0)} | "
+                f"{result.get('mean_difference_without_minus_with', 0):+.2f} | "
+                f"{result.get('t_statistic', 'n/a') if result.get('t_statistic') is not None else 'infinite'} | "
+                f"{result.get('degrees_of_freedom', 'n/a')} | {p_value_label(result.get('p_value_two_sided'))} |"
+            )
+    if not found:
+        print("| _No significance tests found. Run the updated experiment first._ | | | | | | |")
+
 
 def process_metrics(filepath):
     try:
-        with open(filepath, 'r') as f:
-            data = json.load(f)
-    except Exception as e:
-        print(f"Error loading JSON: {e}")
+        with open(filepath, encoding="utf-8") as stream:
+            data = json.load(stream)
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"Error loading JSON: {error}")
         return
 
-    results = []
+    print_scorecard(data)
+    print_significance(data)
 
-    for condition in data.get('by_condition', []):
-        removed_assumptions = condition.get('removed_assumptions', [])
-
-        # Only process conditions where exactly one assumption was removed
-        if len(removed_assumptions) != 1:
-            continue
-
-        omitted_documents = condition.get('omitted_documents', [])
-
-        # Skip rows where additional documents were omitted to keep the table clean
-        if omitted_documents:
-            continue
-
-        assumption = removed_assumptions[0]
-        has_goal_model = condition.get('include_goal_model', False)
-
-        # Extract metrics
-        semantic_rate = condition.get('any_credit_rate', 0.0) * 100
-        mean_credit = condition.get('mean_graded_credit', 0.0)
-        strict_rate = condition.get('strict_correctness_rate', 0.0) * 100
-
-        # Find or create the dictionary for this assumption
-        entry = next((item for item in results if item["assumption"] == assumption), None)
-        if not entry:
-            entry = {
-                "assumption": assumption,
-                "semantic_wo": 0.0,
-                "semantic_w": 0.0,
-                "mean_credit_wo": 0.0,
-                "mean_credit_w": 0.0,
-                "strict_wo": 0.0,
-                "strict_w": 0.0
-            }
-            results.append(entry)
-
-        # Populate the specific column data based on the goal model condition
-        if has_goal_model:
-            entry["semantic_w"] = semantic_rate
-            entry["mean_credit_w"] = mean_credit
-            entry["strict_w"] = strict_rate
-        else:
-            entry["semantic_wo"] = semantic_rate
-            entry["mean_credit_wo"] = mean_credit
-            entry["strict_wo"] = strict_rate
-
-    # Print the Markdown table
-    print("| Omitted Assumption | Any Credit (w/o Goal Model) | Any Credit (w/ Goal Model) | Graded Credit (w/o Goal Model) | Graded Credit (w/ Goal Model) | Strict Correctness (w/o Goal Model) | Strict Correctness (w/ Goal Model) |")
-    print("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
-
-    # Variables to accumulate sums for the average row
-    sum_semantic_wo = 0
-    sum_semantic_w = 0
-    sum_mean_credit_wo = 0
-    sum_mean_credit_w = 0
-    sum_strict_wo = 0
-    sum_strict_w = 0
-
-    for row in sorted(results, key=lambda x: x["assumption"]):
-        print(f"| **{row['assumption']}** | {row['semantic_wo']:.0f}% | {row['semantic_w']:.0f}% | {row['mean_credit_wo']:.2f} | {row['mean_credit_w']:.2f} | {row['strict_wo']:.0f}% | {row['strict_w']:.0f}% |")
-        
-        sum_semantic_wo += row['semantic_wo']
-        sum_semantic_w += row['semantic_w']
-        sum_mean_credit_wo += row['mean_credit_wo']
-        sum_mean_credit_w += row['mean_credit_w']
-        sum_strict_wo += row['strict_wo']
-        sum_strict_w += row['strict_w']
-
-    # Calculate and print the average row
-    n = len(results)
-    if n > 0:
-        print(f"| **AVERAGE** | **{sum_semantic_wo/n:.0f}%** | **{sum_semantic_w/n:.0f}%** | **{sum_mean_credit_wo/n:.2f}** | **{sum_mean_credit_w/n:.2f}** | **{sum_strict_wo/n:.0f}%** | **{sum_strict_w/n:.0f}%** |")
 
 if __name__ == "__main__":
-    process_metrics("experiment_metrics.json")
+    process_metrics(sys.argv[1] if len(sys.argv) > 1 else "experiment_metrics.json")

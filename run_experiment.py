@@ -1,6 +1,7 @@
 import argparse
 import itertools
 import json
+import math
 import os
 import re
 import statistics
@@ -9,6 +10,8 @@ import sys
 import time
 from collections import defaultdict
 from pathlib import Path
+
+from scipy.stats import ttest_rel
 
 
 ASSUMPTIONS = {
@@ -175,7 +178,6 @@ def make_cases(args, root):
         goal_variants.extend(itertools.combinations(names, size))
 
     cases = []
-    document_names = ["mission-text", "rules", "structured-slugs", "slugs-input", "counter-strategy"]
     for trial in range(1, args.trials + 1):
         trial_root = root / f"trial_{trial:03d}"
         models_root = trial_root / "goal_models"
@@ -185,31 +187,25 @@ def make_cases(args, root):
             goal_model = models_root / f"{model_tag}.gm"
             if not goal_model.exists():
                 write_goal_variant("LabSamples.gm", goal_model, set(removed))
-            document_conditions = [("full", set())]
-            if not removed:
-                document_conditions.extend(
-                    (f"without_{name}", {name}) for name in document_names
-                )
             include_goal_conditions = [True, False]
-            for document_tag, omitted_documents in document_conditions:
-                for include_goal_model in include_goal_conditions:
-                    goal_tag = "with_goal_model" if include_goal_model else "without_goal_model"
-                    case_tag = f"{model_tag}__{document_tag}__{goal_tag}"
-                    artifact_root = trial_root / case_tag
-                    artifact_root.mkdir(parents=True, exist_ok=True)
-                    cases.append({
-                        "trial": trial,
-                        "case": case_tag,
-                        "removed_assumptions": list(removed),
-                        "omitted_documents": sorted(omitted_documents),
-                        "include_goal_model": include_goal_model,
-                        "goal_model": goal_model,
-                        "structured_slugs": artifact_root / "model.structuredslugs",
-                        "slugs_input": artifact_root / "model.slugsin",
-                        "counter_strategy": artifact_root / "counter_strategy.txt",
-                        "report": artifact_root / "review.json",
-                        "markdown": artifact_root / "review.md",
-                    })
+            for include_goal_model in include_goal_conditions:
+                goal_tag = "with_goal_model" if include_goal_model else "without_goal_model"
+                case_tag = f"{model_tag}__{goal_tag}"
+                artifact_root = trial_root / case_tag
+                artifact_root.mkdir(parents=True, exist_ok=True)
+                cases.append({
+                    "trial": trial,
+                    "case": case_tag,
+                    "removed_assumptions": list(removed),
+                    "omitted_documents": [],
+                    "include_goal_model": include_goal_model,
+                    "goal_model": goal_model,
+                    "structured_slugs": artifact_root / "model.structuredslugs",
+                    "slugs_input": artifact_root / "model.slugsin",
+                    "counter_strategy": artifact_root / "counter_strategy.txt",
+                    "report": artifact_root / "review.json",
+                    "markdown": artifact_root / "review.md",
+                })
     return cases
 
 
@@ -247,6 +243,59 @@ def summarize(results):
             "mean_findings": round(statistics.mean(item["metrics"].get("finding_count", 0) for item in items), 3),
         })
     return summaries
+
+
+def summarize_goal_model_tests(results):
+    groups = defaultdict(dict)
+    for result in results:
+        if not result["review_available"] or result["omitted_documents"]:
+            continue
+        key = tuple(result["removed_assumptions"])
+        groups[key][(result["trial"], result["include_goal_model"])] = result["metrics"]
+
+    tests = []
+    for removed, trial_metrics in sorted(groups.items(), key=str):
+        paired = []
+        for trial in sorted({trial for trial, _ in trial_metrics}):
+            with_goal = trial_metrics.get((trial, True))
+            without_goal = trial_metrics.get((trial, False))
+            if with_goal is not None and without_goal is not None:
+                paired.append((with_goal, without_goal))
+
+        test = {
+            "removed_assumptions": list(removed),
+            "paired_trials": len(paired),
+            "note": "Positive differences mean the without-goal-model condition scored higher.",
+        }
+        for metric in ("graded_credit", "any_credit", "strict_correctness"):
+            without_goal = [float(pair[1].get(metric, 0.0)) for pair in paired]
+            with_goal = [float(pair[0].get(metric, 0.0)) for pair in paired]
+            if len(paired) < 2:
+                test[metric] = {"insufficient_pairs": True}
+                continue
+            differences = [without - with_goal for without, with_goal in zip(without_goal, with_goal)]
+            difference_variance = statistics.pvariance(differences)
+            t_statistic_is_infinite = False
+            if math.isclose(difference_variance, 0.0, abs_tol=1e-12):
+                if differences[0] == 0:
+                    t_statistic, p_value = 0.0, 1.0
+                else:
+                    t_statistic, t_statistic_is_infinite = None, True
+                    p_value = 0.0
+            else:
+                statistic = ttest_rel(without_goal, with_goal)
+                t_statistic, p_value = float(statistic.statistic), float(statistic.pvalue)
+            test[metric] = {
+                "mean_with_goal_model": round(statistics.mean(with_goal), 4),
+                "mean_without_goal_model": round(statistics.mean(without_goal), 4),
+                "mean_difference_without_minus_with": round(statistics.mean(differences), 4),
+                "t_statistic": None if t_statistic_is_infinite else round(t_statistic, 4),
+                "t_statistic_is_infinite": t_statistic_is_infinite,
+                "degrees_of_freedom": len(paired) - 1,
+                "p_value_two_sided": round(p_value, 6),
+            }
+        tests.append(test)
+    return tests
 
 
 def main():
@@ -313,10 +362,15 @@ def main():
         "assumptions": ASSUMPTIONS,
         "results": results,
         "by_condition": summarize(results),
+        "goal_model_significance": summarize_goal_model_tests(results),
         "completed_at_epoch": time.time(),
     }
     Path(args.metrics).write_text(json.dumps(output, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"case_count": len(cases), "by_condition": output["by_condition"]}, indent=2))
+    print(json.dumps({
+        "case_count": len(cases),
+        "by_condition": output["by_condition"],
+        "goal_model_significance": output["goal_model_significance"],
+    }, indent=2))
     return 1 if any(item["exit_code"] for item in results) else 0
 
 

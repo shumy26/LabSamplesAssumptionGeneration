@@ -13,4 +13,4 @@ if ! ollama show "$model" >/dev/null 2>&1; then
 	ollama pull "$model"
 fi
 
-exec python3 run_experiment.py --model "$model" "$@"
+exec python3 run_experiment.py --model "$model" "$@" --trials 20 --max-assumptions-removed 1
