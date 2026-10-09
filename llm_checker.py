@@ -34,6 +34,7 @@ def compile_goal_model(goal_model, structured_slugs, parser):
     code, output = run_command([sys.executable, parser, structured_slugs])
     if code:
         raise RuntimeError(output)
+    return output
 
 
 def parse_json_response(content):
@@ -50,8 +51,15 @@ def parse_json_response(content):
     return json.loads(content)
 
 
-def build_review_prompt(context, include_goal_model=True):
-    goal_model = context["goal_model"] if include_goal_model else "[Goal Model omitted from this review variant.]"
+def build_review_prompt(context, include_goal_model=True, included_documents=None):
+    included_documents = included_documents or {}
+
+    def document(name, label):
+        if included_documents.get(name, True):
+            return context[name]
+        return f"[{label} omitted from this review variant.]"
+
+    goal_model = document("goal_model", "Goal Model") if include_goal_model else "[Goal Model omitted from this review variant.]"
 
     return f"""You are an expert reviewer for a research workflow translating robotic mission descriptions into GR(1) specifications via KAOS Goal Models.
 
@@ -92,25 +100,25 @@ JSON SCHEMA:
 }}
 
 DESIGN AND COMPILATION RULES FROM rulesgm.txt:
-{context['rules']}
+{document('rules', 'Design and compilation rules')}
 
 NATURAL-LANGUAGE MISSION:
-{context['mission_text']}
+{document('mission_text', 'Natural-language mission')}
 
 GOAL MODEL:
 {goal_model}
 
 GENERATED STRUCTURED SLUGS MODEL:
-{context['structured_slugs']}
+{document('structured_slugs', 'Generated structured SLUGS model')}
 
 PARSER OUTPUT:
-{context['slugs_input']}
+{document('slugs_input', 'Parser output')}
 
 REALIZABILITY RESULT:
 {context['realizability_result']}
 
 COUNTER-STRATEGY:
-{context['counter_strategy_excerpt'] or 'Not available. Specification is realizable.'}
+{document('counter_strategy_excerpt', 'Counter-strategy') if context['counter_strategy_excerpt'] else 'Not available. Specification is realizable.'}
 
 PROPOSAL REQUIREMENTS:
 - Match the existing Goal Model vocabulary and the design rules; do not invent a different modeling style.
@@ -212,8 +220,8 @@ def request_ollama(model, endpoint, messages, context_size):
     return result.get("message", {}).get("content", "")
 
 
-def ask_ollama(model, endpoint, context, include_goal_model=True):
-    prompt = build_review_prompt(context, include_goal_model)
+def ask_ollama(model, endpoint, context, include_goal_model=True, included_documents=None):
+    prompt = build_review_prompt(context, include_goal_model, included_documents)
     content = request_ollama(
         model,
         endpoint,
@@ -272,7 +280,8 @@ def write_markdown(report, output_file):
 
 
 def run_review(args):
-    compile_goal_model(args.goal_model, args.structured_slugs, args.parser)
+    parser_output = compile_goal_model(args.goal_model, args.structured_slugs, args.parser)
+    Path(args.slugs_input).write_text(parser_output, encoding="utf-8")
     status, slugs_output = classify_slugs(args.slugs, args.slugs_input)
     counter_strategy = ""
     if status == "unrealizable":
@@ -308,6 +317,13 @@ def run_review(args):
         args.endpoint,
         context,
         include_goal_model=args.include_goal_model,
+        included_documents={
+            "mission_text": args.include_mission_text,
+            "rules": args.include_rules,
+            "structured_slugs": args.include_structured_slugs,
+            "slugs_input": args.include_slugs_input,
+            "counter_strategy_excerpt": args.include_counter_strategy,
+        },
     )
     report["realizability"] = status
     report["model"] = args.model
@@ -339,6 +355,20 @@ def main():
         help="Omit the Goal Model from the LLM prompt while still using it for compilation.",
     )
     parser.set_defaults(include_goal_model=True)
+    for option, destination, label in [
+        ("mission-text", "include_mission_text", "Omit the natural-language mission"),
+        ("rules", "include_rules", "Omit the design and compilation rules"),
+        ("structured-slugs", "include_structured_slugs", "Omit the generated structured SLUGS model"),
+        ("slugs-input", "include_slugs_input", "Omit the parser output"),
+        ("counter-strategy", "include_counter_strategy", "Omit the counter-strategy"),
+    ]:
+        parser.add_argument(
+            f"--without-{option}",
+            dest=destination,
+            action="store_false",
+            help=label + ".",
+        )
+        parser.set_defaults(**{destination: True})
     parser.add_argument("--endpoint", default="http://127.0.0.1:11434")
     parser.add_argument("--context-size", type=int, default=16384)
     parser.add_argument("--report", default="llm_review.json")

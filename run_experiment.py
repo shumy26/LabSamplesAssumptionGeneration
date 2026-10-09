@@ -1,23 +1,26 @@
 import argparse
+import itertools
 import json
 import os
+import re
+import statistics
 import subprocess
 import sys
 import time
+from collections import defaultdict
 from pathlib import Path
 
 
-EXPECTED = {
-    "omitted_assumptions": [
-        "FloorInertia",
-        "LaboratoryInertia",
-        "BarcodeBecomesValid",
-    ],
-    "omitted_formulas": {
-        "FloorInertia": "(at_floor & !goto_lab) -> at_floor'",
-        "LaboratoryInertia": "(at_lab & !goto_floor) -> at_lab'",
-        "BarcodeBecomesValid": "(auth_present & scan) -> F barcode_ok",
-    },
+ASSUMPTIONS = {
+    "LocationMutex": "!(at_floor & at_lab)",
+    "FloorInertia": "(at_floor & !goto_lab) -> at_floor'",
+    "LaboratoryInertia": "(at_lab & !goto_floor) -> at_lab'",
+    "BarcodeReaderCausality": "(!barcode_ok & !scan) -> !barcode_ok'",
+    "BarcodePersistence": "(barcode_ok & !load_machine & !human_pickup) -> barcode_ok'",
+    "SampleConsumed": "(load_machine | human_pickup) -> !barcode_ok'",
+    "LaboratoryArrival": "goto_lab -> F at_lab",
+    "FloorArrival": "goto_floor -> F at_floor",
+    "BarcodeBecomesValid": "(auth_present & scan) -> F barcode_ok",
 }
 
 
@@ -27,159 +30,217 @@ def run(command):
     return result, time.perf_counter() - started
 
 
-def report_metrics(report):
+def assumption_name(header):
+    match = re.match(r"Assumption\s+\[([^]]+)\]", header.strip())
+    return match.group(1) if match else None
+
+
+def write_goal_variant(source, destination, removed):
+    lines = Path(source).read_text(encoding="utf-8").splitlines(keepends=True)
+    output = []
+    skipping = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("Assumption ["):
+            skipping = assumption_name(stripped) in removed
+        elif stripped and not stripped.startswith("#") and re.match(
+            r"^(?:Initialization|Assumption(?:\s+Achieve)?|Goal(?:\s+(?:Maintain|Achieve))?)\s+\[[^]]+\]$",
+            stripped,
+        ):
+            skipping = False
+        if not skipping:
+            output.append(line)
+    Path(destination).write_text("".join(output), encoding="utf-8")
+
+
+def expected_metrics(report, removed):
     findings = report.get("findings", [])
     serialized = json.dumps(findings).lower()
-    assumption_finding = any(
-        item.get("category") == "missing_assumption" for item in findings
-    )
-    omission_terms = {
-        "FloorInertia": (
-            "floor inertia" in serialized
-            or "floorinertia" in serialized
-            or "at_floor" in serialized and "goto_lab" in serialized
-        ),
-        "LaboratoryInertia": (
-            "laboratory inertia" in serialized
-            or "laboratoryinertia" in serialized
-            or "at_lab" in serialized and "goto_floor" in serialized
-        ),
-        "BarcodeBecomesValid": (
-            "barcode becomes valid" in serialized
-            or "barcodebecomesvalid" in serialized
-            or "barcode_ok" in serialized and "scan" in serialized
-        ),
-    }
-    proposal_terms = {
-        "FloorInertia": lambda formula: (
-            "at_floor" in formula and "goto_lab" in formula and "'" in formula
-        ),
-        "LaboratoryInertia": lambda formula: (
-            "at_lab" in formula and "goto_floor" in formula and "'" in formula
-        ),
-        "BarcodeBecomesValid": lambda formula: (
-            "barcode_ok" in formula and "scan" in formula and "F" in formula
-        ),
-    }
-    proposed_omissions = {
-        name: any(
+    detected = {}
+    proposed = {}
+    for name, formula in ASSUMPTIONS.items():
+        detected[name] = name.lower() in serialized or formula.lower().replace("'", "") in serialized
+        proposed[name] = any(
             item.get("category") == "missing_assumption"
             and item.get("proposal", {}).get("action") == "add_assumption"
-            and predicate(item.get("proposal", {}).get("formal_def", ""))
+            and formula.lower().replace("'", "") in item.get("proposal", {}).get("formal_def", "").lower().replace("'", "")
             for item in findings
         )
-        for name, predicate in proposal_terms.items()
-    }
+    expected = sorted(removed)
     return {
         "finding_count": len(findings),
-        "detects_missing_assumption": assumption_finding,
-        "detects_expected_omissions": omission_terms,
-        "proposes_expected_omissions": proposed_omissions,
-        "strict_correctness": (
-            assumption_finding
-            and all(omission_terms.values())
-            and all(proposed_omissions.values())
-        ),
+        "detects_expected_omissions": {name: detected[name] for name in expected},
+        "proposes_expected_omissions": {name: proposed[name] for name in expected},
+        "evaluated": bool(expected),
+        "strict_correctness": bool(expected)
+        and all(detected[name] and proposed[name] for name in expected),
     }
 
 
-def run_local_review(report_file, markdown_file, include_goal_model, model):
+def run_local_review(case, model):
     command = [
         sys.executable,
         "llm_checker.py",
-        "--report",
-        report_file,
-        "--markdown",
-        markdown_file,
-        "--model",
-        model,
+        "--goal-model", str(case["goal_model"]),
+        "--mission-text", "LabSamplesNL.txt",
+        "--rules-file", "rulesgm.txt",
+        "--structured-slugs", str(case["structured_slugs"]),
+        "--slugs-input", str(case["slugs_input"]),
+        "--counter-strategy", str(case["counter_strategy"]),
+        "--report", str(case["report"]),
+        "--markdown", str(case["markdown"]),
+        "--model", model,
     ]
-    if not include_goal_model:
+    if not case["include_goal_model"]:
         command.append("--without-goal-model")
-    started = time.perf_counter()
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
-    return result, time.perf_counter() - started
+    for document in case["omitted_documents"]:
+        command.append(f"--without-{document}")
+    return run(command)
+
+
+def make_cases(args, root):
+    names = sorted(ASSUMPTIONS)
+    goal_variants = [tuple()]
+    for size in range(1, args.max_assumptions_removed + 1):
+        goal_variants.extend(itertools.combinations(names, size))
+
+    cases = []
+    document_names = ["mission-text", "rules", "structured-slugs", "slugs-input", "counter-strategy"]
+    for trial in range(1, args.trials + 1):
+        trial_root = root / f"trial_{trial:03d}"
+        models_root = trial_root / "goal_models"
+        models_root.mkdir(parents=True, exist_ok=True)
+        for removed in goal_variants:
+            model_tag = "full" if not removed else "without_" + "_and_".join(removed)
+            goal_model = models_root / f"{model_tag}.gm"
+            if not goal_model.exists():
+                write_goal_variant("LabSamples.gm", goal_model, set(removed))
+            document_conditions = [("full", set())]
+            if not removed:
+                document_conditions.extend(
+                    (f"without_{name}", {name}) for name in document_names
+                )
+            include_goal_conditions = [True, False]
+            for document_tag, omitted_documents in document_conditions:
+                for include_goal_model in include_goal_conditions:
+                    goal_tag = "with_goal_model" if include_goal_model else "without_goal_model"
+                    case_tag = f"{model_tag}__{document_tag}__{goal_tag}"
+                    artifact_root = trial_root / case_tag
+                    artifact_root.mkdir(parents=True, exist_ok=True)
+                    cases.append({
+                        "trial": trial,
+                        "case": case_tag,
+                        "removed_assumptions": list(removed),
+                        "omitted_documents": sorted(omitted_documents),
+                        "include_goal_model": include_goal_model,
+                        "goal_model": goal_model,
+                        "structured_slugs": artifact_root / "model.structuredslugs",
+                        "slugs_input": artifact_root / "model.slugsin",
+                        "counter_strategy": artifact_root / "counter_strategy.txt",
+                        "report": artifact_root / "review.json",
+                        "markdown": artifact_root / "review.md",
+                    })
+    return cases
+
+
+def summarize(results):
+    groups = defaultdict(list)
+    for result in results:
+        key = (
+            tuple(result["removed_assumptions"]),
+            result["include_goal_model"],
+            tuple(result["omitted_documents"]),
+        )
+        groups[key].append(result)
+    summaries = []
+    for key, items in sorted(groups.items(), key=str):
+        evaluated = [item for item in items if item["metrics"]["evaluated"]]
+        summaries.append({
+            "removed_assumptions": list(key[0]),
+            "include_goal_model": key[1],
+            "omitted_documents": list(key[2]),
+            "trials": len(items),
+            "successful_reviews": sum(item["review_available"] for item in items),
+            "review_success_rate": round(sum(item["review_available"] for item in items) / len(items), 4),
+            "evaluated_trials": len(evaluated),
+            "strict_correct_trials": sum(item["metrics"]["strict_correctness"] for item in evaluated),
+            "strict_correctness_rate": round(
+                sum(item["metrics"]["strict_correctness"] for item in evaluated) / len(evaluated), 4
+            ) if evaluated else None,
+            "mean_findings": round(statistics.mean(item["metrics"].get("finding_count", 0) for item in items), 3),
+        })
+    return summaries
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run and measure the local Gemma GR(1) review.")
-    parser.add_argument("--without-goal-report", default="llm_review_without_goal.json")
-    parser.add_argument("--with-goal-report", default="llm_review.json")
-    parser.add_argument("--metrics", default="experiment_metrics.json")
+    parser = argparse.ArgumentParser(description="Repeated LLM review and ablation experiment.")
+    parser.add_argument("--trials", type=int, default=3)
+    parser.add_argument("--max-assumptions-removed", type=int, default=1)
     parser.add_argument("--model", default=os.environ.get("OLLAMA_MODEL", "gemma4:26b"))
+    parser.add_argument("--output-dir", default="experiment_runs")
+    parser.add_argument("--metrics", default="experiment_metrics.json")
+    parser.add_argument("--limit", type=int, help="Run only the first N generated cases.")
+    parser.add_argument("--dry-run", action="store_true", help="Write the manifest without calling Ollama.")
     args = parser.parse_args()
+    if args.trials < 1 or args.max_assumptions_removed < 0:
+        parser.error("--trials must be positive and --max-assumptions-removed cannot be negative")
 
-    metrics = {
-        "experiment": "intentional omission detection",
-        "expected_ground_truth": EXPECTED,
-        "started_at_epoch": time.time(),
+    root = Path(args.output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    cases = make_cases(args, root)
+    if args.limit:
+        cases = cases[: args.limit]
+    manifest = [{key: (str(value) if isinstance(value, Path) else value) for key, value in case.items()} for case in cases]
+    if args.dry_run:
+        output = {"mode": "dry-run", "case_count": len(cases), "cases": manifest}
+        Path(args.metrics).write_text(json.dumps(output, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps(output, indent=2))
+        return 0
+
+    results = []
+    for index, case in enumerate(cases, start=1):
+        review, elapsed = run_local_review(case, args.model)
+        report_available = review.returncode == 0 and case["report"].exists()
+        result = {
+            "trial": case["trial"],
+            "case": case["case"],
+            "removed_assumptions": case["removed_assumptions"],
+            "omitted_documents": sorted(case["omitted_documents"]),
+            "include_goal_model": case["include_goal_model"],
+            "elapsed_seconds": round(elapsed, 3),
+            "exit_code": review.returncode,
+            "review_available": report_available,
+            "report": str(case["report"]),
+        }
+        if report_available:
+            result["metrics"] = expected_metrics(
+                json.loads(case["report"].read_text(encoding="utf-8")),
+                case["removed_assumptions"],
+            )
+        else:
+            result["metrics"] = {
+                "finding_count": 0,
+                "evaluated": bool(case["removed_assumptions"]),
+                "strict_correctness": False,
+            }
+            result["error"] = (review.stdout + review.stderr).strip()
+        results.append(result)
+        print(f"[{index}/{len(cases)}] {case['case']} review={'ok' if report_available else 'failed'}")
+
+    output = {
+        "experiment": "repeated goal-model and document ablation review",
         "model": args.model,
-        "without_goal_model": {},
-        "with_goal_model": {},
+        "trials_requested": args.trials,
+        "max_assumptions_removed": args.max_assumptions_removed,
+        "case_count": len(cases),
+        "assumptions": ASSUMPTIONS,
+        "results": results,
+        "by_condition": summarize(results),
+        "completed_at_epoch": time.time(),
     }
-
-    pipeline_started = time.perf_counter()
-    compile_result, _ = run([sys.executable, "compile_to_gr1.py"])
-    parser_result, _ = run([
-        sys.executable,
-        "slugs/tools/StructuredSlugsParser/compiler.py",
-        "LabSamples.structuredslugs",
-    ])
-    Path("LabSamples.slugsin").write_text(parser_result.stdout, encoding="utf-8")
-    slugs_result, _ = run(["./slugs/src/slugs", "LabSamples.slugsin"])
-    pipeline_seconds = time.perf_counter() - pipeline_started
-    pipeline = slugs_result
-    if "Specification is unrealizable" in slugs_result.stdout + slugs_result.stderr:
-        counter_result, _ = run(["./slugs/src/slugs", "--counterStrategy", "LabSamples.slugsin"])
-        Path("counter_strategy.txt").write_text(
-            counter_result.stdout + counter_result.stderr,
-            encoding="utf-8",
-        )
-    if compile_result.returncode or parser_result.returncode or slugs_result.returncode:
-        metrics["pipeline_error"] = (
-            compile_result.stderr + parser_result.stderr + slugs_result.stderr
-        )
-    metrics["pipeline_seconds"] = round(pipeline_seconds, 3)
-    metrics["slugs_result"] = (
-        "unrealizable"
-        if "Specification is unrealizable" in pipeline.stdout + pipeline.stderr
-        else "unknown"
-    )
-    metrics["pipeline_exit_code"] = pipeline.returncode
-
-    variants = [
-        ("without_goal_model", args.without_goal_report, "llm_review_without_goal.md", False),
-        ("with_goal_model", args.with_goal_report, "llm_review.md", True),
-    ]
-    for name, report_file, markdown_file, include_goal_model in variants:
-        Path(report_file).unlink(missing_ok=True)
-        review, review_seconds = run_local_review(
-            report_file,
-            markdown_file,
-            include_goal_model,
-            args.model,
-        )
-        metrics[name]["elapsed_seconds"] = round(review_seconds, 3)
-        metrics[name]["exit_code"] = review.returncode
-        metrics[name]["report_available"] = review.returncode == 0 and Path(report_file).exists()
-        if review.returncode:
-            metrics[name]["error"] = (review.stdout + review.stderr).strip()
-        if metrics[name]["report_available"]:
-            metrics[name].update(report_metrics(json.loads(Path(report_file).read_text())))
-
-    metrics["correctness_definition"] = (
-        "Strict correctness requires missing_assumption findings for FloorInertia, "
-        "LaboratoryInertia, and BarcodeBecomesValid, with references and candidate "
-        "formulas matching all three omitted assumptions."
-    )
-    metrics["completed_at_epoch"] = time.time()
-    Path(args.metrics).write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(metrics, indent=2))
-    review_failed = any(
-        metrics[name]["exit_code"] != 0
-        for name, _, _, _ in variants
-    )
-    return 1 if pipeline.returncode or review_failed else 0
+    Path(args.metrics).write_text(json.dumps(output, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({"case_count": len(cases), "by_condition": output["by_condition"]}, indent=2))
+    return 1 if any(item["exit_code"] for item in results) else 0
 
 
 if __name__ == "__main__":
