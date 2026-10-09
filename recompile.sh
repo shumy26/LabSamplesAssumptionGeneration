@@ -1,28 +1,27 @@
-##!/usr/bin/env bash
+#!/usr/bin/env bash
 
-python3 compile_to_gr1.py
-python3 slugs/tools/StructuredSlugsParser/compiler.py LabSamples.structuredslugs > LabSamples.slugsin
+python3 compile_to_spectra.py LabSamples.gm LabSamples.spectra
 
 echo "Checking realizability..."
 
-CHECK_REALIZABILITY=$(./slugs/src/slugs LabSamples.slugsin 2>&1)
+cd spectra
+CHECK_REALIZABILITY=$(java -jar spectra-cli.jar -i ../LabSamples.spectra --counter-strategy 2>&1)
+cd ..
 
-# 3. Route the execution based on the result
 if [[ "$CHECK_REALIZABILITY" == *"Specification is realizable"* ]]; then
-    echo "Result: REALIZABLE! Synthesizing controller..."
-    ./slugs/src/slugs --explicitStrategy --jsonOutput LabSamples.slugsin > controller.json
-    echo "Success: Saved to controller.json"
+    echo "Result: REALIZABLE!"
+    echo "$CHECK_REALIZABILITY" > counter_strategy.txt
     python3 llm_checker.py \
         --model "${OLLAMA_MODEL:-gemma4:26b}"
 
 elif [[ "$CHECK_REALIZABILITY" == *"Specification is unrealizable"* ]]; then
     echo "Result: UNREALIZABLE! Extracting counter-strategy..."
-    ./slugs/src/slugs --counterStrategy LabSamples.slugsin > counter_strategy.txt
+    echo "$CHECK_REALIZABILITY" > counter_strategy.txt
     echo "Failed: Environment winning strategy saved to counter_strategy.txt"
     python3 llm_checker.py \
         --model "${OLLAMA_MODEL:-gemma4:26b}"
 
 else
-    echo "An unexpected error occurred during the SLUGS check:"
+    echo "An unexpected error occurred during the Spectra check:"
     echo "$CHECK_REALIZABILITY"
 fi

@@ -8,30 +8,29 @@ import urllib.request
 from pathlib import Path
 
 
-def run_command(command):
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+def run_command(command, cwd=None):
+    result = subprocess.run(command, capture_output=True, text=True, check=False, cwd=cwd)
     return result.returncode, result.stdout + result.stderr
 
 
-def classify_slugs(slugs_executable, slugs_input):
-    _, output = run_command([slugs_executable, slugs_input])
+def classify_spectra(spectra_cli, spectra_input):
+    code, output = run_command([
+        "java", "-jar", spectra_cli, "-i", f"../{spectra_input}", "--counter-strategy"
+    ], cwd="spectra")
     if "Specification is realizable" in output:
         return "realizable", output
     if "Specification is unrealizable" in output:
         return "unrealizable", output
-    raise RuntimeError(f"Slugs returned an unknown result:\n{output}")
+    raise RuntimeError(f"Spectra returned an unknown result:\n{output}")
 
 
-def compile_goal_model(goal_model, structured_slugs, parser):
+def compile_goal_model(goal_model, spectra_file):
     code, output = run_command([
         sys.executable,
-        "compile_to_gr1.py",
+        "compile_to_spectra.py",
         goal_model,
-        structured_slugs,
+        spectra_file,
     ])
-    if code:
-        raise RuntimeError(output)
-    code, output = run_command([sys.executable, parser, structured_slugs])
     if code:
         raise RuntimeError(output)
 
@@ -55,7 +54,7 @@ def build_review_prompt(context, include_goal_model=True):
 
     return f"""You are an expert reviewer for a research workflow translating robotic mission descriptions into GR(1) specifications via KAOS Goal Models.
 
-Use every supplied artifact as evidence: the natural-language mission, Goal Model, design rules, compiler contract, generated structured SLUGS model, parser output, realizability result, and counter-strategy. Do not assume that a realizable specification is physically correct. The generated artifacts describe what the current workflow actually synthesizes; identify mismatches between them and the mission.
+Use every supplied artifact as evidence: the natural-language mission, Goal Model, design rules, compiler contract, generated Spectra model, realizability result, and counter-strategy. Do not assume that a realizable specification is physically correct. The generated artifacts describe what the current workflow actually synthesizes; identify mismatches between them and the mission.
 
 Critically evaluate the specification for operational resilience against non-ideal physical realities. Real-world environments are imperfect: sensors may fail to read, human operators may abandon tasks, and expected environmental triggers might never occur. Look for missing timeouts, fallback states, or boundary conditions needed to prevent the system from getting permanently stuck (starvation) when the ideal sequence of events is disrupted.
 
@@ -100,11 +99,8 @@ NATURAL-LANGUAGE MISSION:
 GOAL MODEL:
 {goal_model}
 
-GENERATED STRUCTURED SLUGS MODEL:
-{context['structured_slugs']}
-
-PARSER OUTPUT:
-{context['slugs_input']}
+GENERATED SPECTRA MODEL:
+{context['spectra_input']}
 
 REALIZABILITY RESULT:
 {context['realizability_result']}
@@ -272,17 +268,11 @@ def write_markdown(report, output_file):
 
 
 def run_review(args):
-    compile_goal_model(args.goal_model, args.structured_slugs, args.parser)
-    status, slugs_output = classify_slugs(args.slugs, args.slugs_input)
+    compile_goal_model(args.goal_model, args.spectra_input)
+    status, spectra_output = classify_spectra(args.spectra_cli, args.spectra_input)
     counter_strategy = ""
     if status == "unrealizable":
-        code, counter_strategy = run_command([
-            args.slugs,
-            "--counterStrategy",
-            args.slugs_input,
-        ])
-        if code:
-            raise RuntimeError(counter_strategy)
+        counter_strategy = spectra_output
         Path(args.counter_strategy).write_text(counter_strategy, encoding="utf-8")
 
     counter_strategy_excerpt = counter_strategy
@@ -295,9 +285,8 @@ def run_review(args):
     context = {
         "mission_text": Path(args.mission_text).read_text(encoding="utf-8"),
         "goal_model": Path(args.goal_model).read_text(encoding="utf-8"),
-        "structured_slugs": Path(args.structured_slugs).read_text(encoding="utf-8"),
-        "slugs_input": Path(args.slugs_input).read_text(encoding="utf-8"),
-        "realizability_result": slugs_output,
+        "spectra_input": Path(args.spectra_input).read_text(encoding="utf-8"),
+        "realizability_result": spectra_output,
         "counter_strategy": counter_strategy,
         "counter_strategy_excerpt": counter_strategy_excerpt,
         "rules": Path(args.rules_file).read_text(encoding="utf-8"),
@@ -328,9 +317,8 @@ def main():
     parser.add_argument("--counter-strategy-chars", type=int, default=3500)
     parser.add_argument("--rules-file", default="rulesgm.txt")
     parser.add_argument("--structured-slugs", default="LabSamples.structuredslugs")
-    parser.add_argument("--slugs-input", default="LabSamples.slugsin")
-    parser.add_argument("--parser", default="slugs/tools/StructuredSlugsParser/compiler.py")
-    parser.add_argument("--slugs", default="./slugs/src/slugs")
+    parser.add_argument("--spectra-input", default="LabSamples.spectra")
+    parser.add_argument("--spectra-cli", default="spectra-cli.jar")
     parser.add_argument("--model", default="gemma4:26b")
     parser.add_argument(
         "--without-goal-model",

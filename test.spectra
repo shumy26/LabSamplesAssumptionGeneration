@@ -1,0 +1,19 @@
+module Test
+
+env boolean a;
+sys boolean b;
+
+asm init_a:
+  !a;
+
+gar init_b:
+  !b;
+
+asm trans_a:
+  G (a -> next(a));
+
+gar trans_b:
+  G (b <-> a);
+
+gar live_b:
+  GF b;

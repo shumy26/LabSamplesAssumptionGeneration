@@ -1,0 +1,86 @@
+module LabSamples
+
+env boolean at_floor;
+env boolean at_lab;
+env boolean auth_present;
+env boolean barcode_ok;
+env boolean env_monitor_FloorArrival;
+env boolean env_monitor_LaboratoryArrival;
+env boolean human_pickup;
+env boolean request;
+sys boolean goto_floor;
+sys boolean goto_lab;
+sys boolean load_machine;
+sys boolean log_event;
+sys boolean scan;
+
+asm env_init_0:
+  !request;
+asm env_init_1:
+  !auth_present;
+asm env_init_2:
+  !human_pickup;
+asm env_init_3:
+  at_floor;
+asm env_init_4:
+  !at_lab;
+asm env_init_5:
+  !barcode_ok;
+asm env_init_6:
+  !env_monitor_LaboratoryArrival;
+asm env_init_7:
+  !env_monitor_FloorArrival;
+gar sys_init_0:
+  !goto_floor;
+gar sys_init_1:
+  !goto_lab;
+gar sys_init_2:
+  !scan;
+gar sys_init_3:
+  !load_machine;
+gar sys_init_4:
+  !log_event;
+asm env_trans_0:
+  G (!(at_floor & at_lab));
+asm env_trans_1:
+  G (!((!barcode_ok & !scan)) | (!next(barcode_ok)));
+asm env_trans_2:
+  G (!((barcode_ok & !load_machine & !human_pickup)) | (next(barcode_ok)));
+asm env_trans_3:
+  G (!((load_machine | human_pickup)) | (!next(barcode_ok)));
+asm env_trans_4:
+  G ((!next(env_monitor_LaboratoryArrival) | ((env_monitor_LaboratoryArrival | ((goto_lab) & !(at_lab))) & !(next(at_lab)))) & (next(env_monitor_LaboratoryArrival) | !((env_monitor_LaboratoryArrival | ((goto_lab) & !(at_lab))) & !(next(at_lab)))));
+asm env_trans_5:
+  G ((!next(env_monitor_FloorArrival) | ((env_monitor_FloorArrival | ((goto_floor) & !(at_floor))) & !(next(at_floor)))) & (next(env_monitor_FloorArrival) | !((env_monitor_FloorArrival | ((goto_floor) & !(at_floor))) & !(next(at_floor)))));
+asm env_live_0:
+  GF (!env_monitor_LaboratoryArrival);
+asm env_live_1:
+  GF (!env_monitor_FloorArrival);
+gar sys_trans_0:
+  G (!(goto_floor & goto_lab));
+gar sys_trans_1:
+  G (!(scan) | ((at_floor & auth_present & !barcode_ok & !human_pickup)));
+gar sys_trans_2:
+  G (!(goto_lab) | ((barcode_ok | !at_floor)));
+gar sys_trans_3:
+  G (!(((request & barcode_ok & at_floor & !human_pickup) | (goto_lab & !at_lab & !human_pickup))) | (next(goto_lab)));
+gar sys_trans_4:
+  G (!(load_machine) | ((at_lab & barcode_ok & !human_pickup)));
+gar sys_trans_5:
+  G (!((at_lab & barcode_ok & !human_pickup)) | (load_machine));
+gar sys_trans_6:
+  G (!((at_lab & barcode_ok & !human_pickup)) | (!goto_floor));
+gar sys_trans_7:
+  G (!((at_lab & (!barcode_ok | human_pickup))) | (next(goto_floor)));
+gar sys_trans_8:
+  G (!((goto_floor & !at_floor)) | (next(goto_floor)));
+gar sys_trans_9:
+  G (!((!request & at_floor & !goto_lab & !goto_floor)) | (!next(goto_lab)));
+gar sys_trans_10:
+  G (!((!request & at_floor & !goto_lab & !goto_floor)) | (!next(goto_floor)));
+gar sys_trans_11:
+  G (!((scan | goto_floor | goto_lab | load_machine)) | (log_event));
+gar sys_live_0:
+  GF ((!(request & auth_present) | (load_machine | human_pickup)));
+gar sys_live_1:
+  GF (at_floor);
