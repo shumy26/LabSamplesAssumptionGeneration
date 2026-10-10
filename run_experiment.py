@@ -248,7 +248,11 @@ def summarize(results):
 def summarize_goal_model_tests(results):
     groups = defaultdict(dict)
     for result in results:
-        if not result["review_available"] or result["omitted_documents"]:
+        if (
+            not result["review_available"]
+            or result["omitted_documents"]
+            or not result["removed_assumptions"]
+        ):
             continue
         key = tuple(result["removed_assumptions"])
         groups[key][(result["trial"], result["include_goal_model"])] = result["metrics"]
@@ -268,8 +272,8 @@ def summarize_goal_model_tests(results):
             "note": "Positive differences mean the without-goal-model condition scored higher.",
         }
         for metric in ("graded_credit", "any_credit", "strict_correctness"):
-            without_goal = [float(pair[1].get(metric, 0.0)) for pair in paired]
-            with_goal = [float(pair[0].get(metric, 0.0)) for pair in paired]
+            without_goal = [float(pair[1].get(metric, 0.0) or 0.0) for pair in paired]
+            with_goal = [float(pair[0].get(metric, 0.0) or 0.0) for pair in paired]
             if len(paired) < 2:
                 test[metric] = {"insufficient_pairs": True}
                 continue
@@ -307,6 +311,11 @@ def main():
     parser.add_argument("--metrics", default="experiment_metrics.json")
     parser.add_argument("--limit", type=int, help="Run only the first N generated cases.")
     parser.add_argument("--dry-run", action="store_true", help="Write the manifest without calling Ollama.")
+    parser.add_argument(
+        "--reuse-existing-reports",
+        action="store_true",
+        help="Reuse existing review.json files instead of calling the LLM again.",
+    )
     args = parser.parse_args()
     if args.trials < 1 or args.max_assumptions_removed < 0:
         parser.error("--trials must be positive and --max-assumptions-removed cannot be negative")
@@ -325,7 +334,11 @@ def main():
 
     results = []
     for index, case in enumerate(cases, start=1):
-        review, elapsed = run_local_review(case, args.model)
+        if args.reuse_existing_reports and case["report"].exists():
+            review = subprocess.CompletedProcess([], 0, "Reused existing report.\n", "")
+            elapsed = 0.0
+        else:
+            review, elapsed = run_local_review(case, args.model)
         report_available = review.returncode == 0 and case["report"].exists()
         result = {
             "trial": case["trial"],
