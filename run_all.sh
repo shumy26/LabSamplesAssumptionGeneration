@@ -13,4 +13,15 @@ if ! ollama show "$model" >/dev/null 2>&1; then
 	ollama pull "$model"
 fi
 
+has_trials=0
+for argument in "$@"; do
+	if [[ "$argument" == "--trials" || "$argument" == --trials=* ]]; then
+		has_trials=1
+	fi
+done
+
+if [[ "$has_trials" -eq 1 ]]; then
+	exec python3 run_experiment.py --model "$model" "$@" --max-assumptions-removed 1
+fi
+
 exec python3 run_experiment.py --model "$model" "$@" --trials 20 --max-assumptions-removed 1

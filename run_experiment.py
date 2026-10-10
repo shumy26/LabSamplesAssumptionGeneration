@@ -16,28 +16,56 @@ from scipy.stats import ttest_rel
 from mission_config import mission_paths
 
 
-ASSUMPTIONS = {
-    "LocationMutex": "!(at_floor & at_lab)",
-    "FloorInertia": "(at_floor & !goto_lab) -> at_floor'",
-    "LaboratoryInertia": "(at_lab & !goto_floor) -> at_lab'",
-    "BarcodeReaderCausality": "(!barcode_ok & !scan) -> !barcode_ok'",
-    "BarcodePersistence": "(barcode_ok & !load_machine & !human_pickup) -> barcode_ok'",
-    "SampleConsumed": "(load_machine | human_pickup) -> !barcode_ok'",
-    "LaboratoryArrival": "goto_lab -> F at_lab",
-    "FloorArrival": "goto_floor -> F at_floor",
-    "BarcodeBecomesValid": "(auth_present & scan) -> F barcode_ok",
+MISSION_ASSUMPTIONS = {
+    "LabSamples": {
+        "LocationMutex": "!(at_floor & at_lab)",
+        "FloorInertia": "(at_floor & !goto_lab) -> at_floor'",
+        "LaboratoryInertia": "(at_lab & !goto_floor) -> at_lab'",
+        "BarcodeReaderCausality": "(!barcode_ok & !scan) -> !barcode_ok'",
+        "BarcodePersistence": "(barcode_ok & !load_machine & !human_pickup) -> barcode_ok'",
+        "SampleConsumed": "(load_machine | human_pickup) -> !barcode_ok'",
+        "LaboratoryArrival": "goto_lab -> F at_lab",
+        "FloorArrival": "goto_floor -> F at_floor",
+        "BarcodeBecomesValid": "(auth_present & scan) -> F barcode_ok",
+    },
+    "KeepingClean": {
+        "CleanConsumed": "clean_room -> room_cleaned'",
+        "CleanPersistence": "(room_cleaned & request) -> room_cleaned'",
+        "CleanReset": "!request -> !room_cleaned'",
+        "NotCleanPersistence": "(!room_cleaned & !clean_room & request) -> !room_cleaned'",
+        "OccupiedConsumed": "abort_mission -> !room_occupied'",
+        "OccupiedPersistence": "(room_occupied & !abort_mission) -> room_occupied'",
+        "RequestConsumed": "(clean_room | abort_mission) -> !request'",
+        "RequestPersistence": "(request & !clean_room & !abort_mission) -> request'",
+        "RoomArrival": "goto_room -> F at_room",
+        "BaseArrival": "goto_base -> F at_base",
+    },
 }
 
-ASSUMPTION_CONCEPTS = {
-    "LocationMutex": ("floor", "laboratory", "lab", "simultaneously"),
-    "FloorInertia": ("floor", "goto_lab", "leave", "remain"),
-    "LaboratoryInertia": ("laboratory", "lab", "goto_floor", "leave", "remain"),
-    "BarcodeReaderCausality": ("barcode", "scan", "scanner", "reader"),
-    "BarcodePersistence": ("barcode", "load_machine", "machine", "human", "pickup", "remain"),
-    "SampleConsumed": ("load_machine", "machine", "human", "pickup", "consum", "barcode"),
-    "LaboratoryArrival": ("goto_lab", "laboratory", "lab", "arriv", "command"),
-    "FloorArrival": ("goto_floor", "floor", "arriv", "command"),
-    "BarcodeBecomesValid": ("barcode", "auth", "authoriz", "scan", "valid"),
+MISSION_ASSUMPTION_CONTEXT = {
+    "LabSamples": {
+        "LocationMutex": ("floor", "laboratory", "lab", "simultaneously"),
+        "FloorInertia": ("floor", "goto_lab", "leave", "remain"),
+        "LaboratoryInertia": ("laboratory", "lab", "goto_floor", "leave", "remain"),
+        "BarcodeReaderCausality": ("barcode", "scan", "scanner", "reader"),
+        "BarcodePersistence": ("barcode", "load_machine", "machine", "human", "pickup", "remain"),
+        "SampleConsumed": ("load_machine", "machine", "human", "pickup", "consum", "barcode"),
+        "LaboratoryArrival": ("goto_lab", "laboratory", "lab", "arriv", "command"),
+        "FloorArrival": ("goto_floor", "floor", "arriv", "command"),
+        "BarcodeBecomesValid": ("barcode", "auth", "authoriz", "scan", "valid"),
+    },
+    "KeepingClean": {
+        "CleanConsumed": ("clean", "room_cleaned", "completion"),
+        "CleanPersistence": ("clean", "room_cleaned", "request", "remain"),
+        "CleanReset": ("clean", "room_cleaned", "request", "reset"),
+        "NotCleanPersistence": ("not_clean", "room_cleaned", "clean_room", "request", "remain"),
+        "OccupiedConsumed": ("occupied", "abort", "room", "clear"),
+        "OccupiedPersistence": ("occupied", "abort", "room", "remain"),
+        "RequestConsumed": ("request", "clean", "abort", "consume"),
+        "RequestPersistence": ("request", "clean", "abort", "remain"),
+        "RoomArrival": ("room", "goto_room", "arrival"),
+        "BaseArrival": ("base", "goto_base", "arrival"),
+    },
 }
 
 
@@ -47,9 +75,18 @@ def run(command):
     return result, time.perf_counter() - started
 
 
-def assumption_name(header):
-    match = re.match(r"Assumption\s+\[([^]]+)\]", header.strip())
-    return match.group(1) if match else None
+def mission_assumptions(paths):
+    try:
+        return MISSION_ASSUMPTIONS[paths["name"]]
+    except KeyError as error:
+        raise ValueError(f"No hardcoded experiment assumptions configured for mission {paths['name']!r}") from error
+
+
+def mission_assumption_context(paths):
+    try:
+        return MISSION_ASSUMPTION_CONTEXT[paths["name"]]
+    except KeyError as error:
+        raise ValueError(f"No hardcoded experiment context configured for mission {paths['name']!r}") from error
 
 
 def write_goal_variant(source, destination, removed):
@@ -59,7 +96,9 @@ def write_goal_variant(source, destination, removed):
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("Assumption ["):
-            skipping = assumption_name(stripped) in removed
+            match = re.search(r"Assumption \[([^\]]+)\]", stripped)
+            name = match.group(1) if match else ""
+            skipping = name in removed
         elif stripped and not stripped.startswith("#") and re.match(
             r"^(?:Initialization|Assumption(?:\s+Achieve)?|Goal(?:\s+(?:Maintain|Achieve))?)\s+\[[^]]+\]$",
             stripped,
@@ -69,8 +108,7 @@ def write_goal_variant(source, destination, removed):
             output.append(line)
     Path(destination).write_text("".join(output), encoding="utf-8")
 
-
-def expected_metrics(report, removed):
+def expected_metrics(report, removed, assumptions, concepts):
     findings = report.get("findings", [])
     detected = {}
     proposed = {}
@@ -88,10 +126,10 @@ def expected_metrics(report, removed):
             if token not in {"f", "g", "true", "false"}
         }
 
-    for name, formula in ASSUMPTIONS.items():
+    for name, formula in assumptions.items():
         normalized_formula = formula.lower().replace("'", "")
         expected_variables = formula_variables(formula)
-        expected_concepts = ASSUMPTION_CONCEPTS.get(name, ())
+        expected_concepts = concepts[name]
         best_idea_score = 0.0
         best_proposal_score = 0.0
         has_exact_idea = False
@@ -173,9 +211,9 @@ def run_local_review(case, model, rules_file):
     return run(command)
 
 
-def make_cases(args, root):
+def make_cases(args, root, assumptions):
     paths = mission_paths(args.mission)
-    names = sorted(ASSUMPTIONS)
+    names = sorted(assumptions)
     goal_variants = [tuple()]
     for size in range(1, args.max_assumptions_removed + 1):
         goal_variants.extend(itertools.combinations(names, size))
@@ -334,9 +372,12 @@ def main():
     if args.metrics is None:
         args.metrics = str(paths["directory"] / "experiment_metrics.json")
 
+    assumptions = mission_assumptions(paths)
+    concepts = mission_assumption_context(paths)
+
     root = Path(args.output_dir)
     root.mkdir(parents=True, exist_ok=True)
-    cases = make_cases(args, root)
+    cases = make_cases(args, root, assumptions)
     if args.limit:
         cases = cases[: args.limit]
     manifest = [{key: (str(value) if isinstance(value, Path) else value) for key, value in case.items()} for case in cases]
@@ -369,6 +410,8 @@ def main():
             result["metrics"] = expected_metrics(
                 json.loads(case["report"].read_text(encoding="utf-8")),
                 case["removed_assumptions"],
+                assumptions,
+                concepts,
             )
         else:
             result["metrics"] = {
@@ -387,7 +430,7 @@ def main():
         "trials_requested": args.trials,
         "max_assumptions_removed": args.max_assumptions_removed,
         "case_count": len(cases),
-        "assumptions": ASSUMPTIONS,
+        "assumptions": assumptions,
         "results": results,
         "by_condition": summarize(results),
         "goal_model_significance": summarize_goal_model_tests(results),
