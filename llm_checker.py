@@ -7,6 +7,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from mission_config import mission_paths
+
 
 def run_command(command):
     result = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -338,13 +340,14 @@ def main():
     parser = argparse.ArgumentParser(
         description="Review a GR(1) specification with Ollama without changing it."
     )
-    parser.add_argument("--goal-model", default="LabSamples.gm")
-    parser.add_argument("--mission-text", default="LabSamplesNL.txt")
-    parser.add_argument("--counter-strategy", default="counter_strategy.txt")
+    parser.add_argument("--mission", default="LabSamples", help="Mission name or mission package directory.")
+    parser.add_argument("--goal-model")
+    parser.add_argument("--mission-text")
+    parser.add_argument("--counter-strategy")
     parser.add_argument("--counter-strategy-chars", type=int, default=3500)
     parser.add_argument("--rules-file", default="rulesgm.txt")
-    parser.add_argument("--structured-slugs", default="LabSamples.structuredslugs")
-    parser.add_argument("--slugs-input", default="LabSamples.slugsin")
+    parser.add_argument("--structured-slugs")
+    parser.add_argument("--slugs-input")
     parser.add_argument("--parser", default="slugs/tools/StructuredSlugsParser/compiler.py")
     parser.add_argument("--slugs", default="./slugs/src/slugs")
     parser.add_argument("--model", default="gemma4:26b")
@@ -373,7 +376,14 @@ def main():
     parser.add_argument("--context-size", type=int, default=16384)
     parser.add_argument("--report", default="llm_review.json")
     parser.add_argument("--markdown", default="llm_review.md")
-    return run_review(parser.parse_args())
+    args = parser.parse_args()
+    paths = mission_paths(args.mission)
+    args.goal_model = args.goal_model or str(paths["goal_model"])
+    args.mission_text = args.mission_text or str(paths["mission_text"])
+    args.counter_strategy = args.counter_strategy or str(paths["counter_strategy"])
+    args.structured_slugs = args.structured_slugs or str(paths["structured_slugs"])
+    args.slugs_input = args.slugs_input or str(paths["slugs_input"])
+    return run_review(args)
 
 
 if __name__ == "__main__":

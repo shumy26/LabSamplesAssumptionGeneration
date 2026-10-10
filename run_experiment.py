@@ -13,6 +13,8 @@ from pathlib import Path
 
 from scipy.stats import ttest_rel
 
+from mission_config import mission_paths
+
 
 ASSUMPTIONS = {
     "LocationMutex": "!(at_floor & at_lab)",
@@ -150,13 +152,13 @@ def expected_metrics(report, removed):
     }
 
 
-def run_local_review(case, model):
+def run_local_review(case, model, rules_file):
     command = [
         sys.executable,
         "llm_checker.py",
         "--goal-model", str(case["goal_model"]),
-        "--mission-text", "LabSamplesNL.txt",
-        "--rules-file", "rulesgm.txt",
+        "--mission-text", str(case["mission_text"]),
+        "--rules-file", str(rules_file),
         "--structured-slugs", str(case["structured_slugs"]),
         "--slugs-input", str(case["slugs_input"]),
         "--counter-strategy", str(case["counter_strategy"]),
@@ -172,6 +174,7 @@ def run_local_review(case, model):
 
 
 def make_cases(args, root):
+    paths = mission_paths(args.mission)
     names = sorted(ASSUMPTIONS)
     goal_variants = [tuple()]
     for size in range(1, args.max_assumptions_removed + 1):
@@ -186,7 +189,7 @@ def make_cases(args, root):
             model_tag = "full" if not removed else "without_" + "_and_".join(removed)
             goal_model = models_root / f"{model_tag}.gm"
             if not goal_model.exists():
-                write_goal_variant("LabSamples.gm", goal_model, set(removed))
+                write_goal_variant(paths["goal_model"], goal_model, set(removed))
             include_goal_conditions = [True, False]
             for include_goal_model in include_goal_conditions:
                 goal_tag = "with_goal_model" if include_goal_model else "without_goal_model"
@@ -200,6 +203,7 @@ def make_cases(args, root):
                     "omitted_documents": [],
                     "include_goal_model": include_goal_model,
                     "goal_model": goal_model,
+                    "mission_text": paths["mission_text"],
                     "structured_slugs": artifact_root / "model.structuredslugs",
                     "slugs_input": artifact_root / "model.slugsin",
                     "counter_strategy": artifact_root / "counter_strategy.txt",
@@ -307,6 +311,7 @@ def main():
     parser.add_argument("--trials", type=int, default=3)
     parser.add_argument("--max-assumptions-removed", type=int, default=1)
     parser.add_argument("--model", default=os.environ.get("OLLAMA_MODEL", "gemma4:26b"))
+    parser.add_argument("--mission", default="LabSamples", help="Mission name or mission package directory.")
     parser.add_argument("--output-dir", default="experiment_runs")
     parser.add_argument("--metrics", default="experiment_metrics.json")
     parser.add_argument("--limit", type=int, help="Run only the first N generated cases.")
@@ -319,6 +324,10 @@ def main():
     args = parser.parse_args()
     if args.trials < 1 or args.max_assumptions_removed < 0:
         parser.error("--trials must be positive and --max-assumptions-removed cannot be negative")
+
+    paths = mission_paths(args.mission)
+    if not paths["goal_model"].exists() or not paths["mission_text"].exists():
+        parser.error(f"mission {args.mission!r} must provide {paths['goal_model']} and {paths['mission_text']}")
 
     root = Path(args.output_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -338,7 +347,7 @@ def main():
             review = subprocess.CompletedProcess([], 0, "Reused existing report.\n", "")
             elapsed = 0.0
         else:
-            review, elapsed = run_local_review(case, args.model)
+            review, elapsed = run_local_review(case, args.model, Path("rulesgm.txt"))
         report_available = review.returncode == 0 and case["report"].exists()
         result = {
             "trial": case["trial"],
@@ -369,6 +378,7 @@ def main():
     output = {
         "experiment": "repeated goal-model and document ablation review",
         "model": args.model,
+        "mission": paths["name"],
         "trials_requested": args.trials,
         "max_assumptions_removed": args.max_assumptions_removed,
         "case_count": len(cases),

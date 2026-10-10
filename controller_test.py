@@ -4,6 +4,8 @@ import random
 from html import escape
 from pathlib import Path
 
+from mission_config import load_simulation_config, mission_paths
+
 
 MONITOR_PREFIXES = ("env_monitor_", "sys_monitor_")
 
@@ -43,7 +45,10 @@ def parse_sections(slugs_file):
     return sections
 
 
-def load_controller(json_file="controller.json", slugs_file="LabSamples.slugsin"):
+def load_controller(json_file=None, slugs_file=None, mission="LabSamples"):
+    paths = mission_paths(mission)
+    json_file = json_file or paths["controller"]
+    slugs_file = slugs_file or paths["slugs_input"]
     with open(json_file, encoding="utf-8") as stream:
         controller = json.load(stream)
 
@@ -52,7 +57,7 @@ def load_controller(json_file="controller.json", slugs_file="LabSamples.slugsin"
     output_variables = set(sections.get("[OUTPUT]", []))
     variables = controller.get("variables", [])
     if set(variables) != input_variables | output_variables:
-        raise ValueError("controller.json variables do not match LabSamples.slugsin")
+        raise ValueError("Controller variables do not match the selected mission's SLUGS input")
     if input_variables & output_variables:
         raise ValueError("Slugs input/output variables overlap")
 
@@ -344,10 +349,10 @@ def print_trace(trace):
         print(f"{item['step']:>4} | {item['node']:>4} | IN: {active_inputs} | OUT: {active_outputs} | {'yes' if item['is_goal'] else 'no'}")
 
 
-def run_lab_sample_mission(json_file="controller.json", slugs_file="LabSamples.slugsin"):
-    controller, input_variables, output_variables = load_controller(json_file, slugs_file)
+def run_lab_sample_mission(json_file=None, slugs_file=None, mission_config=None, mission="LabSamples"):
+    controller, input_variables, output_variables = load_controller(json_file, slugs_file, mission)
     result = run_single_mission(
-        LAB_SAMPLE_MISSION, controller, input_variables, output_variables
+        mission_config or LAB_SAMPLE_MISSION, controller, input_variables, output_variables
     )
     export_trace_to_dot(result["trace"], "sim_example/EXAMPLE_MISSION.dot")
     print_trace(result["trace"])
@@ -359,17 +364,19 @@ def run_lab_sample_mission(json_file="controller.json", slugs_file="LabSamples.s
 
 
 def run_bad_case_missions(
-    json_file="controller.json",
-    slugs_file="LabSamples.slugsin",
+    json_file=None,
+    slugs_file=None,
     trials=SCENARIO_TRIALS,
     seed=None,
+    mission_config=None,
+    mission="LabSamples",
 ):
-    controller, input_variables, output_variables = load_controller(json_file, slugs_file)
+    controller, input_variables, output_variables = load_controller(json_file, slugs_file, mission)
     rng = random.Random(seed)
     results = []
 
     for trial in range(1, trials + 1):
-        mission = dict(LAB_SAMPLE_MISSION)
+        mission = dict(mission_config or LAB_SAMPLE_MISSION)
         mission.update({
             "request_step": rng.randint(1, 3),
             "authorization_step": rng.randint(1, 3),
@@ -391,8 +398,8 @@ def run_bad_case_missions(
     return results
 
 
-def make_scenario_mission(scenario, rng):
-    mission = dict(LAB_SAMPLE_MISSION)
+def make_scenario_mission(scenario, rng, mission_config=None):
+    mission = dict(mission_config or LAB_SAMPLE_MISSION)
     if scenario == "NoAdversity":
         return mission
     if scenario == "ScanFault":
@@ -435,12 +442,18 @@ def run_scenario(mission, controller, input_variables, output_variables):
 
 
 def run_dashboard(
-    json_file="controller.json",
-    slugs_file="LabSamples.slugsin",
+    mission="LabSamples",
+    json_file=None,
+    slugs_file=None,
     trials=SCENARIO_TRIALS,
     seed=DASHBOARD_SEED,
     dashboard_file=DASHBOARD_FILE,
 ):
+    paths = mission_paths(mission)
+    json_file = json_file or str(paths["controller"])
+    slugs_file = slugs_file or str(paths["slugs_input"])
+    base_mission = dict(LAB_SAMPLE_MISSION)
+    base_mission.update(load_simulation_config(paths))
     controller, input_variables, output_variables = load_controller(json_file, slugs_file)
     rng = random.Random(seed)
     simulations = []
@@ -454,7 +467,7 @@ def run_dashboard(
     )
     for scenario in scenarios:
         for trial in range(1, trials + 1):
-            mission = make_scenario_mission(scenario, rng)
+            mission = make_scenario_mission(scenario, rng, base_mission)
             result = run_scenario(
                 mission, controller, input_variables, output_variables
             )
@@ -616,4 +629,12 @@ def write_dashboard(simulations, seed, dashboard_file):
 
 
 if __name__ == "__main__":
-    run_dashboard()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run controller simulations for a mission.")
+    parser.add_argument("--mission", default="LabSamples", help="Mission name or mission package directory.")
+    parser.add_argument("--trials", type=int, default=SCENARIO_TRIALS)
+    parser.add_argument("--seed", type=int, default=DASHBOARD_SEED)
+    parser.add_argument("--dashboard", default=DASHBOARD_FILE)
+    arguments = parser.parse_args()
+    run_dashboard(arguments.mission, trials=arguments.trials, seed=arguments.seed, dashboard_file=arguments.dashboard)

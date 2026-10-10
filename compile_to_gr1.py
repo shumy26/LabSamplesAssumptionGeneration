@@ -1,6 +1,8 @@
 import argparse
 import re
 
+from mission_config import mission_paths
+
 
 HEADER_RE = re.compile(
     r'^(?:Initialization|Assumption(?:\s+Achieve)?|'
@@ -109,7 +111,10 @@ def unwrap_G(formula_str):
         return s
     return s
 
-def generate_slugs(input_file='LabSamples.gm', output_file='LabSamples.structuredslugs'):
+def generate_slugs(input_file=None, output_file=None, mission='LabSamples'):
+    paths = mission_paths(mission)
+    input_file = input_file or paths['goal_model']
+    output_file = output_file or paths['structured_slugs']
     with open(input_file, 'r') as f:
         content = f.read()
 
@@ -246,7 +251,8 @@ def generate_slugs(input_file='LabSamples.gm', output_file='LabSamples.structure
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Compile a goal model into structured Slugs input.')
-    parser.add_argument('input_file', nargs='?', default='LabSamples.gm')
-    parser.add_argument('output_file', nargs='?', default='LabSamples.structuredslugs')
+    parser.add_argument('input_file', nargs='?')
+    parser.add_argument('output_file', nargs='?')
+    parser.add_argument('--mission', default='LabSamples')
     arguments = parser.parse_args()
-    generate_slugs(arguments.input_file, arguments.output_file)
+    generate_slugs(arguments.input_file, arguments.output_file, arguments.mission)

@@ -1,0 +1,8 @@
+{
+  "request_step": 1,
+  "authorization_step": 1,
+  "allow_human_pickup": false,
+  "barcode_validation_delay": 1,
+  "lab_arrival_delay": 2,
+  "floor_arrival_delay": 2
+}

@@ -1,0 +1,74 @@
+[INPUT]
+at_base
+at_room
+env_monitor_BaseArrival
+env_monitor_RoomArrival
+request
+room_cleaned
+room_occupied
+
+
+[OUTPUT]
+abort_mission
+clean_room
+goto_base
+goto_room
+sys_monitor_ReturnToBase
+
+
+[ENV_TRANS]
+| ! clean_room room_cleaned'
+| ! & room_cleaned request room_cleaned'
+| ! ! request ! room_cleaned'
+| ! & & ! room_cleaned ! clean_room request ! room_cleaned'
+| ! abort_mission ! room_occupied'
+| ! & room_occupied ! abort_mission room_occupied'
+| ! & request ! room_occupied ! room_occupied'
+| ! | clean_room abort_mission ! request'
+| ! & & request ! clean_room ! abort_mission request'
+& | ! env_monitor_RoomArrival' & | env_monitor_RoomArrival & goto_room ! at_room ! at_room' | env_monitor_RoomArrival' ! & | env_monitor_RoomArrival & goto_room ! at_room ! at_room'
+& | ! env_monitor_BaseArrival' & | env_monitor_BaseArrival & goto_base ! at_base ! at_base' | env_monitor_BaseArrival' ! & | env_monitor_BaseArrival & goto_base ! at_base ! at_base'
+
+
+[ENV_INIT]
+! request
+at_base
+! at_room
+! room_occupied
+! room_cleaned
+! env_monitor_RoomArrival
+! env_monitor_BaseArrival
+
+
+[SYS_TRANS]
+! & goto_base' goto_room'
+| ! goto_room' & request' ! room_cleaned'
+| ! goto_base' ! request'
+| ! & & request' goto_room ! at_room goto_room'
+| ! at_room ! goto_room'
+| ! & & ! request' goto_base ! at_base goto_base'
+| ! clean_room' & & & at_room' request' ! room_occupied' ! room_cleaned'
+| ! abort_mission' & & at_room' request' room_occupied'
+| ! & & & at_room' request' ! room_occupied' ! room_cleaned' clean_room'
+| ! & & at_room' request' room_occupied' abort_mission'
+! & clean_room' abort_mission'
+& | ! sys_monitor_ReturnToBase' & | sys_monitor_ReturnToBase & ! request ! at_base ! at_base' | sys_monitor_ReturnToBase' ! & | sys_monitor_ReturnToBase & ! request ! at_base ! at_base'
+
+
+[SYS_INIT]
+! goto_base
+! goto_room
+! clean_room
+! abort_mission
+! sys_monitor_ReturnToBase
+
+
+[ENV_LIVENESS]
+! env_monitor_RoomArrival
+! env_monitor_BaseArrival
+
+
+[SYS_LIVENESS]
+| | ! request clean_room abort_mission
+! sys_monitor_ReturnToBase
+
