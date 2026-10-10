@@ -138,11 +138,6 @@ Assumption [OccupiedPersistence]
   InformalDef: The room remains occupied until the robot successfully aborts the cycle.
   FormalDef: (room_occupied & !abort_mission) -> room_occupied'
 
-Assumption [OccupiedCausality]
-  Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
-  InformalDef: Occupancy faults trigger synchronously with the request to prevent liveness traps.
-  FormalDef: (request & !room_occupied) -> !room_occupied'
-
 Assumption [RequestConsumed]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: Cleaning the room or aborting consumes the request cycle.

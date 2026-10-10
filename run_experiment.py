@@ -312,8 +312,8 @@ def main():
     parser.add_argument("--max-assumptions-removed", type=int, default=1)
     parser.add_argument("--model", default=os.environ.get("OLLAMA_MODEL", "gemma4:26b"))
     parser.add_argument("--mission", default="LabSamples", help="Mission name or mission package directory.")
-    parser.add_argument("--output-dir", default="experiment_runs")
-    parser.add_argument("--metrics", default="experiment_metrics.json")
+    parser.add_argument("--output-dir", help="Override the mission-specific experiment directory.")
+    parser.add_argument("--metrics", help="Override the mission-specific metrics JSON path.")
     parser.add_argument("--limit", type=int, help="Run only the first N generated cases.")
     parser.add_argument("--dry-run", action="store_true", help="Write the manifest without calling Ollama.")
     parser.add_argument(
@@ -328,6 +328,11 @@ def main():
     paths = mission_paths(args.mission)
     if not paths["goal_model"].exists() or not paths["mission_text"].exists():
         parser.error(f"mission {args.mission!r} must provide {paths['goal_model']} and {paths['mission_text']}")
+
+    if args.output_dir is None:
+        args.output_dir = str(paths["directory"] / "experiment_runs")
+    if args.metrics is None:
+        args.metrics = str(paths["directory"] / "experiment_metrics.json")
 
     root = Path(args.output_dir)
     root.mkdir(parents=True, exist_ok=True)

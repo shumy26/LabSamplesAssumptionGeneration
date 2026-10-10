@@ -74,6 +74,7 @@ def environment_step(inputs, outputs, request_arrives, config):
         if config["step"] - config["room_command_step"] + 1 >= config["room_arrival_delay"]:
             next_inputs["at_base"] = 0
             next_inputs["at_room"] = 1
+            next_inputs["room_occupied"] = int(config.get("room_occupied", False))
             config.pop("room_command_step", None)
     if outputs.get("goto_base", 0):
         next_inputs["at_base"] = 1
@@ -154,9 +155,19 @@ def main():
     rng = random.Random(seed)
     results = []
     for trial in range(1, trials + 1):
+        scenario_roll = rng.random()
+        occupied = scenario_roll < 0.25
+        scenario = "OccupiedRoom" if occupied else "NormalCleaning"
         config = {
             "request_step": rng.randint(1, 4),
             "room_arrival_delay": rng.randint(1, 4),
+            "room_occupied": occupied,
+            "scenario": scenario,
+            "expected_actions": (
+                ["goto_room", "abort_mission", "goto_base"]
+                if occupied
+                else ["goto_room", "clean_room", "goto_base"]
+            ),
         }
         result = run(config)
         trace = result["trace"]
@@ -166,12 +177,13 @@ def main():
             if any(item["outputs"].get(name, 0) for name in MISSION_ACTIONS)
         ]
         observed = list(dict.fromkeys(actions))
-        if result["status"] == "PASS" and observed[:3] != ["goto_room", "clean_room", "goto_base"]:
+        expected = config.get("expected_actions", ["goto_room", "clean_room", "goto_base"])
+        if observed[:len(expected)] != expected:
             result["status"] = "FAIL"
-            result["reason"] = f"unexpected action sequence: {observed}"
+            result["reason"] = f"unexpected action sequence: {observed}; expected {expected}"
         result.update({"trial": trial, "seed": seed, "config": config, "actions": observed})
         results.append(result)
-        print(f"trial {trial:02d}: {result['status']} {' -> '.join(observed)}")
+        print(f"trial {trial:02d} {scenario}: {result['status']} {' -> '.join(observed)}")
 
     passed = sum(result["status"] == "PASS" for result in results)
     report = Path("missions/KeepingClean/controller_test_results.json")

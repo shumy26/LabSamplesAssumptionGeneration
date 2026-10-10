@@ -3,6 +3,7 @@ import json
 import math
 import statistics
 import sys
+import argparse
 from pathlib import Path
 
 from scipy.stats import ttest_rel
@@ -312,6 +313,18 @@ def process_metrics(filepath, html_filepath="experiment_results.html"):
 
 
 if __name__ == "__main__":
-    metrics_file = sys.argv[1] if len(sys.argv) > 1 else "experiment_metrics.json"
-    html_file = sys.argv[2] if len(sys.argv) > 2 else "experiment_results.html"
+    parser = argparse.ArgumentParser(description="Render an experiment metrics JSON as an HTML dashboard.")
+    parser.add_argument("metrics", nargs="?", help="Metrics JSON path.")
+    parser.add_argument("html", nargs="?", help="HTML dashboard path.")
+    parser.add_argument("--mission", help="Use the mission package's default metrics and dashboard paths.")
+    arguments = parser.parse_args()
+    if arguments.mission:
+        from mission_config import mission_paths
+
+        mission = mission_paths(arguments.mission)
+        metrics_file = arguments.metrics or str(mission["directory"] / "experiment_metrics.json")
+        html_file = arguments.html or str(mission["directory"] / "experiment_results.html")
+    else:
+        metrics_file = arguments.metrics or "experiment_metrics.json"
+        html_file = arguments.html or "experiment_results.html"
     process_metrics(metrics_file, html_file)

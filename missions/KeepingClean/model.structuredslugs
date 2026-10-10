@@ -37,7 +37,6 @@ at_base
 !((!room_cleaned & !clean_room & request)) | (!room_cleaned')
 !(abort_mission) | (!room_occupied')
 !((room_occupied & !abort_mission)) | (room_occupied')
-!((request & !room_occupied)) | (!room_occupied')
 !((clean_room | abort_mission)) | (!request')
 !((request & !clean_room & !abort_mission)) | (request')
 (!env_monitor_RoomArrival' | ((env_monitor_RoomArrival | ((goto_room) & !(at_room))) & !(at_room'))) & (env_monitor_RoomArrival' | !((env_monitor_RoomArrival | ((goto_room) & !(at_room))) & !(at_room')))
