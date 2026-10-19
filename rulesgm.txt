@@ -4,9 +4,9 @@ These rules define a structurally valid KAOS Goal Model that can be translated i
 
 1. Strict decomposition (the refinement tree)
 
-Every model should begin with abstract root goals that describe the final purpose, for example Achieve [SampleTransported].
+Every model should begin with abstract root goals that describe the final purpose, for example Achieve [MissionCompleted].
 
-Use AND refinements to decompose complex goals. To transport a sample, the robot may need Achieve [SampleScanned] AND Achieve [SampleLoaded].
+Use AND refinements to decompose complex goals. A complex mission may require multiple Achieve leaves for its independent subtasks.
 
 Stop decomposition only when a leaf is a Requirement fully controlled by robot outputs, a Domain Property describing immutable physical behavior, or a Domain Assumption describing behavior that the environment is expected to provide.
 
@@ -14,7 +14,7 @@ Stop decomposition only when a leaf is a Requirement fully controlled by robot o
 
 GR(1) synthesis is a two-player game with perfect information. Each atomic proposition must belong to exactly one agent.
 
-The system must never define the next state of an environment variable. For example, the system must not promise Goal Maintain [at_lab], because arrival at the laboratory depends on sensors and physics. The system should promise the command Goal Maintain [goto_lab] and use Assumption [LaboratoryArrival] for the environment response.
+The system must never define the next state of an environment variable. A system goal should constrain controller outputs, while an environment assumption should describe the corresponding physical response.
 
 3. Strict temporal classification (leaf syntax)
 
@@ -33,16 +33,16 @@ The synthesis tool does not accept arbitrary full LTL. Leaf nodes must use these
 
 For every system Goal Achieve that depends on an external condition, provide a corresponding Assumption [Name] whose FormalDef is a liveness formula.
 
-If the robot has a liveness goal requiring load_machine, but a safety rule permits loading only when barcode_ok is true, the environment needs an Assumption guaranteeing that the barcode becomes valid after scanning. Without this pairing, the environment can win by doing nothing.
+If the system has a liveness goal requiring a system action, but a safety rule permits that action only when an environment condition is true, the environment needs an Assumption guaranteeing that condition after the relevant trigger. Without this pairing, the environment can win by doing nothing.
 
 5. Physical completeness of the environment (inertia and mutex)
 
-Synthesis treats the environment as chaotic and adversarial unless the model constrains it. Add inertia assumptions for every environment variable representing the physical world. The environment must not teleport the sample or robot. If the system does not issue a movement command, location sensors should retain their value in the next state, for example (at_floor & !goto_lab) -> at_floor'. Add mutex assumptions where physical states cannot coexist, such as !(at_floor & at_lab).
+Synthesis treats the environment as chaotic and adversarial unless the model constrains it. Add inertia assumptions for every environment variable representing the physical world. The environment must not teleport an entity between incompatible states. If the system does not issue a transition command, a state sensor should retain its value in the next state, for example `(p & !u) -> p'`. Add mutex assumptions where physical states cannot coexist, such as `!(p & q)`.
 
 6. Domain properties and domain assumptions
 
-- `DomainProperty [Name]` describes immutable physical behavior, such as a location mutex. It is compiled as an environment transition constraint and must not be changed, criticized, or proposed for revision by the LLM checker.
-- `Assumption [Name]` describes environment behavior that may fail, such as a nurse appearing or a scanner working. It is compiled like an `Assumption` and may be criticized, suggested, or revised by the LLM checker.
+- `DomainProperty [Name]` describes immutable physical behavior, such as a mutual-exclusion constraint. It is compiled as an environment transition constraint and must not be changed, criticized, or proposed for revision by the LLM checker.
+- `Assumption [Name]` describes environment behavior that may fail, such as an external event occurring or a device responding. It is compiled like an `Assumption` and may be criticized, suggested, or revised by the LLM checker.
 - Domain properties must not be used to guarantee a system output. Domain assumptions may constrain or guarantee only environment inputs.
 
 7. Explicit player ownership by header
@@ -56,7 +56,7 @@ The header determines which player owns the proposition and which GR(1) section 
 - Assumption [Name] with `A -> F B` belongs to the environment and places a generated response monitor in [ENV_TRANS] plus the monitor obligation in [ENV_LIVENESS]. Keep the standard `Assumption [Name]` header used by this Goal Model schema.
 - Goal Maintain [Name] and Goal Achieve [Name] are classified by the ownership of their consequent `q`, not by the header. Their generated monitor is always an input. A consequent input is compiled into environment sections; a consequent output is compiled into system sections.
 
-Therefore, domain properties are immutable environment facts, assumptions are revisable environment expectations, and temporal Goal leaves are classified by `q`. A physical response such as arrival, sensor change, or barcode validation should be modeled as a Domain Assumption with `G(p -> F q)`. A controller command should use a system-owned consequent. Every atom still needs exactly one matching Initialization declaration unless it is a generated monitor, which is always an INPUT.
+Therefore, domain properties are immutable environment facts, assumptions are revisable environment expectations, and temporal Goal leaves are classified by `q`. A physical response should be modeled as an Assumption with `G(p -> F q)`. A controller command should use a system-owned consequent. Every atom still needs exactly one matching Initialization declaration unless it is a generated monitor, which is always an INPUT.
 
 Compiler contract from compile_to_gr1.py
 

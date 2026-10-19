@@ -124,7 +124,7 @@ COUNTER-STRATEGY:
 
 PROPOSAL REQUIREMENTS:
 - Match the existing Goal Model vocabulary and the design rules; do not invent a different modeling style.
-- Keep immutable physical facts under DomainProperty (or Domain Property) and do not propose edits to them. Put revisable environment behavior and physical responses under Domain Assumption or Assumption, and controller commands under Goal. Temporal goals are routed by the ownership of their consequent: an input consequent is an environment obligation, while an output consequent is a system obligation. An environment assumption can ONLY guarantee environment inputs. It CANNOT force a system output (like load_machine) to occur.
+- Keep immutable physical facts under DomainProperty (or Domain Property) and do not propose edits to them. Put revisable environment behavior and physical responses under Domain Assumption or Assumption, and controller commands under Goal. Temporal goals are routed by the ownership of their consequent: an input consequent is an environment obligation, while an output consequent is a system obligation. An environment assumption can ONLY guarantee environment inputs. It CANNOT force a system output to occur.
 - Preserve the current workflow's exact accepted headers (`DomainProperty`/`Domain Property`, `Domain Assumption`, `Assumption`, `Goal`, `Goal Maintain`, and `Goal Achieve`) and one-line FormalDef syntax. Never use a DomainProperty header as a proposal header.
 - Prefer the smallest change that explains the evidence. If a proposed variable is necessary, specify its owner, initialization value, and where it belongs in the Goal Model.
 - Never propose a formula that the compiler contract rejects or that would make the model realizable by assuming away the mission.

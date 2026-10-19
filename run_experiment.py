@@ -18,27 +18,24 @@ from mission_config import mission_paths
 
 MISSION_ASSUMPTIONS = {
     "LabSamples": {
-        "LocationMutex": "!(at_floor & at_lab)",
-        "FloorInertia": "(at_floor & !goto_lab) -> at_floor'",
-        "LaboratoryInertia": "(at_lab & !goto_floor) -> at_lab'",
-        "BarcodeReaderCausality": "(!barcode_ok & !scan) -> !barcode_ok'",
-        "BarcodePersistence": "(barcode_ok & !load_machine & !human_pickup) -> barcode_ok'",
-        "SampleConsumed": "(load_machine | human_pickup) -> !barcode_ok'",
-        "LaboratoryArrival": "goto_lab -> F at_lab",
-        "FloorArrival": "goto_floor -> F at_floor",
-        "BarcodeBecomesValid": "(auth_present & scan) -> F barcode_ok",
+    "BarcodeReaderCausality": "G ((!barcode_ok & !scan) -> !barcode_ok')",
+    "BarcodePersistence": "G ((barcode_ok & !load_machine & !human_pickup) -> barcode_ok')",
+    "SampleConsumed": "G ((load_machine | human_pickup) -> !barcode_ok')",
+        "LaboratoryArrival": "G (goto_lab -> F at_lab)",
+        "FloorArrival": "G (goto_floor -> F at_floor)",
+        "BarcodeBecomesValid": "G ((auth_present & scan) -> F barcode_ok)",
     },
     "KeepingClean": {
-        "CleanConsumed": "clean_room -> room_cleaned'",
-        "CleanPersistence": "(room_cleaned & request) -> room_cleaned'",
-        "CleanReset": "!request -> !room_cleaned'",
-        "NotCleanPersistence": "(!room_cleaned & !clean_room & request) -> !room_cleaned'",
-        "OccupiedConsumed": "abort_mission -> !room_occupied'",
-        "OccupiedPersistence": "(room_occupied & !abort_mission) -> room_occupied'",
-        "RequestConsumed": "(clean_room | abort_mission) -> !request'",
-        "RequestPersistence": "(request & !clean_room & !abort_mission) -> request'",
-        "RoomArrival": "goto_room -> F at_room",
-        "BaseArrival": "goto_base -> F at_base",
+        "CleanConsumed": "G (clean_room -> room_cleaned')",
+        "CleanPersistence": "G ((room_cleaned & request) -> room_cleaned')",
+        "CleanReset": "G (!request -> !room_cleaned')",
+        "NotCleanPersistence": "G ((!room_cleaned & !clean_room & request) -> !room_cleaned')",
+        "OccupiedConsumed": "G (abort_mission -> !room_occupied')",
+        "OccupiedPersistence": "G ((room_occupied & !abort_mission) -> room_occupied')",
+        "RequestConsumed": "G ((clean_room | abort_mission) -> !request')",
+        "RequestPersistence": "G ((request & !clean_room & !abort_mission) -> request')",
+        "RoomArrival": "G (goto_room -> F at_room)",
+        "BaseArrival": "G (goto_base -> F at_base)",
     },
 }
 
@@ -126,12 +123,13 @@ def write_goal_variant(source, destination, removed):
     skipping = False
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("Assumption ["):
-            match = re.search(r"Assumption \[([^\]]+)\]", stripped)
+        if stripped.startswith(("Assumption [", "Domain Assumption [")):
+            match = re.search(r"(?:Domain )?Assumption \[([^\]]+)\]", stripped)
             name = match.group(1) if match else ""
             skipping = name in removed
         elif stripped and not stripped.startswith("#") and re.match(
-            r"^(?:Initialization|Assumption(?:\s+Achieve)?|Goal(?:\s+(?:Maintain|Achieve))?)\s+\[[^]]+\]$",
+            r"^(?:Initialization|Domain(?:\s+)?Property|Domain Assumption|"
+            r"Assumption(?:\s+Achieve)?|Goal(?:\s+(?:Maintain|Achieve))?)\s+\[[^]]+\]$",
             stripped,
         ):
             skipping = False
@@ -424,7 +422,9 @@ def main():
             review = subprocess.CompletedProcess([], 0, "Reused existing report.\n", "")
             elapsed = 0.0
         else:
-            review, elapsed = run_local_review(case, args.model, Path("rulesgm.txt"))
+            review, elapsed = run_local_review(
+                case, args.model, Path(__file__).resolve().parent / "rulesgm.txt"
+            )
         report_available = review.returncode == 0 and case["report"].exists()
         result = {
             "trial": case["trial"],
