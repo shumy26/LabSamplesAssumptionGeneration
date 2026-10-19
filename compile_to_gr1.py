@@ -5,7 +5,8 @@ from mission_config import mission_paths
 
 
 HEADER_RE = re.compile(
-    r'^(?:Initialization|Assumption(?:\s+Achieve)?|'
+    r'^(?:Initialization|Domain(?:\s+)?Property|Domain Assumption|'
+    r'Assumption(?:\s+Achieve)?|'
     r'Goal(?:\s+(?:Maintain|Achieve))?)\s+\[[^]]+\]$'
 )
 VARIABLE_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
@@ -41,10 +42,22 @@ def prime_formula(formula_str, variables):
     return primed
 
 def response_monitor(monitor_name, lhs, rhs):
-    """Encode lhs -> F rhs with a pending-obligation GR(1) monitor."""
-    rhs_primed = prime_formula(rhs, extract_variables(rhs))
-    pending = f"({monitor_name} | (({lhs}) & !({rhs}))) & !({rhs_primed})"
-    return f"(!{monitor_name}' | ({pending})) & ({monitor_name}' | !({pending}))"
+    """Encode G(lhs -> F rhs) with the requested pending-state monitor."""
+    pending = f"({monitor_name} | (({lhs}) & !({rhs}))) & !({rhs})"
+    return [
+        f"(!{monitor_name}' | ({pending}))",
+        f"(!({pending}) | {monitor_name}')",
+    ]
+
+
+def maintain_monitor(monitor_name, lhs, rhs):
+    """Encode G(lhs -> G rhs) with an input latch monitor."""
+    latched = f"({monitor_name} | ({lhs}))"
+    return [
+        f"(!{monitor_name}' | {latched})",
+        f"(!{latched} | {monitor_name}')",
+        f"!({latched}) | ({rhs})",
+    ]
 
 def parse_blocks(content):
     """Read model entries without inferring FormalDef from arbitrary text."""
@@ -69,6 +82,27 @@ def split_response(formula):
     """Return (antecedent, consequent) for the restricted A -> F B pattern."""
     match = re.fullmatch(r'(.+?)\s*->\s*F\s+(.+)', formula)
     return match.groups() if match else None
+
+
+def split_maintain(formula):
+    """Return (antecedent, consequent) for G(A -> G B)."""
+    match = re.fullmatch(r'(.+?)\s*->\s*G\s+(.+)', formula)
+    return match.groups() if match else None
+
+
+def goal_consequent_owner(consequent, owners):
+    """Return the player owning the consequent of a temporal goal."""
+    variables = extract_variables(consequent)
+    if not variables:
+        raise ValueError("Temporal goal consequent must contain an owned variable")
+    consequent_owners = {owners.get(variable) for variable in variables}
+    if None in consequent_owners:
+        unknown = sorted(variable for variable in variables if variable not in owners)
+        raise ValueError(
+            "Temporal goal consequent refers to variables without initialization "
+            "ownership: " + ", ".join(unknown)
+        )
+    return "system" if "system" in consequent_owners else "environment"
 
 
 def make_monitor_name(header, owner):
@@ -170,44 +204,64 @@ def generate_slugs(input_file=None, output_file=None, mission='LabSamples'):
         # Safely extract formula from G(...) wrappers
         unwrapped_formula = unwrap_G(flat_formula)
 
+        is_domain_property = header.startswith(("DomainProperty", "Domain Property"))
+        is_assumption = header.startswith("Assumption") or header.startswith(
+            "Domain Assumption"
+        )
+        is_goal_maintain = header.startswith("Goal Maintain")
+        is_goal_achieve = header.startswith("Goal Achieve")
+
+        # Domain properties are immutable physical facts. They are compiled as
+        # environment constraints, but are kept distinct for review tooling.
+        if is_domain_property:
+            env_trans.append(unwrap_G(flat_formula))
+            continue
+
         # 2. Pure Liveness Assumption or System Guarantee
         response = split_response(unwrapped_formula)
         if response is None and re.match(r'^F\s+', unwrapped_formula):
             clean_live = re.sub(r'^F\s+', '', unwrapped_formula).strip()
-            if header.startswith("Assumption"):
+            if is_assumption:
                 env_liveness.append(clean_live)
             else:
                 sys_liveness.append(clean_live)
 
-        # 3. Response Pattern (Liveness: A -> F B)
+        # 3. Response Pattern (Liveness: G(A -> F B))
         elif response is not None:
             lhs = response[0].strip()
             rhs = response[1].strip()
-            
-            if header.startswith("Assumption"):
-                monitor_name = make_monitor_name(header, "env")
-                inputs.add(monitor_name)
-                env_init.append(f"!{monitor_name}")
-                env_trans.append(response_monitor(monitor_name, lhs, rhs))
-                env_liveness.append(f"!{monitor_name}")
-            else:
-                monitor_name = make_monitor_name(header, "sys")
-                outputs.add(monitor_name)
-                sys_init.append(f"!{monitor_name}")
-                sys_trans.append(response_monitor(monitor_name, lhs, rhs))
-                sys_liveness.append(f"!{monitor_name}")
-                
+            owner = "environment" if is_assumption else goal_consequent_owner(rhs, owners)
+            monitor_name = make_monitor_name(header, "pending")
+            inputs.add(monitor_name)
+            env_init.append(f"!{monitor_name}")
+            transitions = response_monitor(monitor_name, lhs, rhs)
+            env_trans.extend(transitions)
+            (env_liveness if owner == "environment" else sys_liveness).append(
+                f"!{monitor_name}"
+            )
+
+        # 4. Latch Pattern (Safety: G(A -> G B))
+        elif is_goal_maintain and (maintain := split_maintain(unwrapped_formula)):
+            lhs, rhs = (part.strip() for part in maintain)
+            owner = goal_consequent_owner(rhs, owners)
+            monitor_name = make_monitor_name(header, "latch")
+            inputs.add(monitor_name)
+            env_init.append(f"!{monitor_name}")
+            transitions = maintain_monitor(monitor_name, lhs, rhs)
+            env_trans.extend(transitions[:2])
+            (env_trans if owner == "environment" else sys_trans).append(transitions[2])
+
         # 4. Safety, Invariants, Mutexes, and Frame Conditions
-        elif header.startswith('Goal') or header.startswith('Assumption'):
+        elif header.startswith('Goal') or is_assumption:
             if "->" in unwrapped_formula:
                 parts = unwrapped_formula.split("->", 1)
                 lhs = parts[0].strip()
                 rhs = parts[1].strip()
-                formula = f"!({lhs}) | ({rhs})"
+                formula = f"({lhs}) -> ({rhs})"
             else:
                 formula = unwrapped_formula
                 
-            if header.startswith("Assumption"):
+            if is_assumption:
                 env_trans.append(formula)
             else:
                 sys_trans.append(formula)

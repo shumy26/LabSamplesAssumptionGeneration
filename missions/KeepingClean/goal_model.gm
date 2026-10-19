@@ -13,9 +13,13 @@ Goal Achieve [MissionLiveness]
   Refines: Goal Achieve [KeepRoomsCleanSafely]
   InformalDef: The robot must resolve the request and return to base.
 
+DomainProperty [PhysicalWorldLaws]
+  Refines: Goal Achieve [KeepRoomsCleanSafely]
+  InformalDef: Immutable physical laws governing robot locations and movement inertia.
+
 Assumption [EnvironmentPhysicsAndResponsiveness]
   Refines: Goal Achieve [KeepRoomsCleanSafely]
-  InformalDef: The environment must obey physical locations and causality.
+  InformalDef: The environment must obey task causality and respond to navigation commands.
 
 # --------------------------------------------------------------------
 # 0. INITIALIZATION
@@ -32,128 +36,149 @@ Initialization [SystemStart]
   FormalDef: !goto_base & !goto_room & !clean_room & !abort_mission
 
 # --------------------------------------------------------------------
-# 1. GOAL MAINTAIN (System Safety Requirements)
+# 1. GOAL (System Safety Invariants & Valid Transitions)
+# Relocated from Goal Maintain to avoid permanent G(p -> G q) latching
 # --------------------------------------------------------------------
 
-Goal Maintain [ExclusiveNavigation]
+Goal [ExclusiveNavigation]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot cannot navigate to multiple locations simultaneously.
   FormalDef: G (!(goto_base' & goto_room'))
 
-Goal Maintain [RoomNavGuard]
+Goal [RoomNavGuard]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot travels to the room to clean it if a request is active.
   FormalDef: G (goto_room' -> (request' & !room_cleaned'))
 
-Goal Maintain [BaseNavGuard]
+Goal [BaseNavGuard]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot travels to the base if idle.
   FormalDef: G (goto_base' -> (!request'))
 
-Goal Maintain [RoomNavPersistence]
+Goal [RoomNavPersistence]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Once commanded to the room, the robot must persist until it arrives.
   FormalDef: G ((request' & goto_room & !at_room) -> goto_room')
 
-Goal Maintain [StopRoomNavigation]
+Goal [StopRoomNavigation]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot stops issuing the room navigation command after arrival.
   FormalDef: G (at_room -> !goto_room')
 
-Goal Maintain [BaseNavPersistence]
+Goal [BaseNavPersistence]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Once commanded to the base, the robot must persist until it arrives.
   FormalDef: G (((!request') & goto_base & !at_base) -> goto_base')
 
-Goal Maintain [CleanValid]
+Goal [CleanValid]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot cleans only if the room is unoccupied and not yet clean.
   FormalDef: G (clean_room' -> (at_room' & request' & !room_occupied' & !room_cleaned'))
 
-Goal Maintain [AbortValid]
+Goal [AbortValid]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot can only abort if the room is occupied.
   FormalDef: G (abort_mission' -> (at_room' & request' & room_occupied'))
 
-Goal Maintain [CleanWhenReady]
+Goal [CleanWhenReady]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: If the room is unoccupied, the robot must clean it.
   FormalDef: G ((at_room' & request' & !room_occupied' & !room_cleaned') -> clean_room')
 
-Goal Maintain [AbortWhenOccupied]
+Goal [AbortWhenOccupied]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: If the room is occupied, the robot must abort the mission.
   FormalDef: G ((at_room' & request' & room_occupied') -> abort_mission')
 
-Goal Maintain [ExclusiveActions]
+Goal [ExclusiveActions]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot cannot execute conflicting operational actions simultaneously.
   FormalDef: G (!(clean_room' & abort_mission'))
 
 # --------------------------------------------------------------------
 # 2. GOAL ACHIEVE (System Liveness Guarantees)
+# Uses G(p -> F q) with system-owned consequent outputs
 # --------------------------------------------------------------------
 
 Goal Achieve [MissionCompletion]
   Refines: Goal Achieve [MissionLiveness]
-  InformalDef: The system guarantees the request resolves either by cleaning or aborting.
-  FormalDef: F (!request | clean_room | abort_mission)
+  InformalDef: Whenever a request is active, the robot eventually cleans the room or aborts the mission.
+  FormalDef: G (request -> F (clean_room | abort_mission))
 
 Goal Achieve [ReturnToBase]
   Refines: Goal Achieve [MissionLiveness]
-  InformalDef: The robot eventually returns to the base to rest when no request is active.
-  FormalDef: (!request) -> F (at_base)
+  InformalDef: Whenever no request is active and the robot is away from the base, it eventually commands a return to the base.
+  FormalDef: G ((!request & !at_base) -> F goto_base)
 
 # --------------------------------------------------------------------
-# 3. ASSUMPTION (Environment Physics & Responsiveness)
+# 3. DOMAIN PROPERTIES (Immutable Physical Behavior)
+# --------------------------------------------------------------------
+
+DomainProperty [LocationMutex]
+  Refines: DomainProperty [PhysicalWorldLaws]
+  InformalDef: The environment cannot place the robot in two locations simultaneously.
+  FormalDef: G (!(at_base & at_room))
+
+DomainProperty [BaseInertia]
+  Refines: DomainProperty [PhysicalWorldLaws]
+  InformalDef: The robot stays at the base unless commanded to the room.
+  FormalDef: G ((at_base & !goto_room) -> at_base')
+
+DomainProperty [RoomInertia]
+  Refines: DomainProperty [PhysicalWorldLaws]
+  InformalDef: The robot stays at the room unless commanded to the base.
+  FormalDef: G ((at_room & !goto_base) -> at_room')
+
+# --------------------------------------------------------------------
+# 4. ASSUMPTIONS (Revisable Environment Expectations & Liveness)
 # --------------------------------------------------------------------
 
 Assumption [CleanConsumed]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: Executing the clean action updates the environment status.
-  FormalDef: clean_room -> room_cleaned'
+  FormalDef: G (clean_room -> room_cleaned')
 
 Assumption [CleanPersistence]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: Once clean, the room stays clean for the duration of the request.
-  FormalDef: (room_cleaned & request) -> room_cleaned'
+  FormalDef: G ((room_cleaned & request) -> room_cleaned')
 
 Assumption [CleanReset]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: The room clean status resets for the next mission once the request is cleared.
-  FormalDef: !request -> !room_cleaned'
+  FormalDef: G (!request -> !room_cleaned')
 
 Assumption [NotCleanPersistence]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: The environment cannot fake the cleaning completion.
-  FormalDef: (!room_cleaned & !clean_room & request) -> !room_cleaned'
+  FormalDef: G ((!room_cleaned & !clean_room & request) -> !room_cleaned')
 
 Assumption [OccupiedConsumed]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: Aborting the mission handles the room occupancy state.
-  FormalDef: abort_mission -> !room_occupied'
+  FormalDef: G (abort_mission -> !room_occupied')
 
 Assumption [OccupiedPersistence]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: The room remains occupied until the robot successfully aborts the cycle.
-  FormalDef: (room_occupied & !abort_mission) -> room_occupied'
+  FormalDef: G ((room_occupied & !abort_mission) -> room_occupied')
 
 Assumption [RequestConsumed]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: Cleaning the room or aborting consumes the request cycle.
-  FormalDef: (clean_room | abort_mission) -> !request'
+  FormalDef: G ((clean_room | abort_mission) -> !request')
 
 Assumption [RequestPersistence]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: The request persists until the mission cycle is resolved.
-  FormalDef: (request & !clean_room & !abort_mission) -> request'
+  FormalDef: G ((request & !clean_room & !abort_mission) -> request')
 
 Assumption [RoomArrival]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: Commanding the robot to the room eventually succeeds.
-  FormalDef: goto_room -> F at_room
+  FormalDef: G (goto_room -> F at_room)
 
 Assumption [BaseArrival]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: Commanding the robot to the base eventually succeeds.
-  FormalDef: goto_base -> F at_base
+  FormalDef: G (goto_base -> F at_base)

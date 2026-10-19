@@ -55,16 +55,47 @@ MISSION_ASSUMPTION_CONTEXT = {
         "BarcodeBecomesValid": ("barcode", "auth", "authoriz", "scan", "valid"),
     },
     "KeepingClean": {
-        "CleanConsumed": ("clean", "room_cleaned", "completion"),
-        "CleanPersistence": ("clean", "room_cleaned", "request", "remain"),
-        "CleanReset": ("clean", "room_cleaned", "request", "reset"),
-        "NotCleanPersistence": ("not_clean", "room_cleaned", "clean_room", "request", "remain"),
-        "OccupiedConsumed": ("occupied", "abort", "room", "clear"),
-        "OccupiedPersistence": ("occupied", "abort", "room", "remain"),
-        "RequestConsumed": ("request", "clean", "abort", "consume"),
-        "RequestPersistence": ("request", "clean", "abort", "remain"),
-        "RoomArrival": ("room", "goto_room", "arrival"),
-        "BaseArrival": ("base", "goto_base", "arrival"),
+        "CleanConsumed": (
+            "clean", "cleaned", "cleaning", "sanitize", "sterilize", "hygiene",
+            "room", "room_cleaned", "completion", "complete", "status", "update",
+        ),
+        "CleanPersistence": (
+            "clean", "cleaned", "cleaning", "room", "room_cleaned", "request",
+            "active", "remain", "persist", "persistence", "state",
+        ),
+        "CleanReset": (
+            "clean", "cleaned", "unclean", "not_clean", "dirty", "room",
+            "room_cleaned", "request", "reset", "clear", "cycle", "next",
+        ),
+        "NotCleanPersistence": (
+            "not_clean", "unclean", "dirty", "room", "room_cleaned", "clean_room",
+            "clean", "request", "remain", "persist", "persistence", "state",
+        ),
+        "OccupiedConsumed": (
+            "occupied", "occupancy", "room", "in_use", "unavailable", "patient",
+            "person", "abort", "cancel", "terminate", "clear", "release",
+        ),
+        "OccupiedPersistence": (
+            "occupied", "occupancy", "room", "in_use", "unavailable", "patient",
+            "person", "abort", "remain", "persist", "persistence", "until",
+        ),
+        "RequestConsumed": (
+            "request", "mission", "task", "job", "clean", "cleaning", "abort",
+            "cancel", "consume", "resolve", "complete", "clear", "cycle",
+        ),
+        "RequestPersistence": (
+            "request", "mission", "task", "job", "clean", "cleaning", "abort",
+            "cancel", "remain", "persist", "persistence", "active", "cycle",
+        ),
+        "RoomArrival": (
+            "room", "destination", "navigate", "navigation", "travel", "move",
+            "arrive", "arrival", "reach", "goto_room", "command",
+        ),
+        "BaseArrival": (
+            "base", "station", "home", "recharge", "charging", "return",
+            "navigate", "navigation", "travel", "arrive", "arrival", "reach",
+            "goto_base", "command",
+        ),
     },
 }
 

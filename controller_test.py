@@ -7,7 +7,12 @@ from pathlib import Path
 from mission_config import load_simulation_config, mission_paths
 
 
-MONITOR_PREFIXES = ("env_monitor_", "sys_monitor_")
+MONITOR_PREFIXES = (
+    "env_monitor_",
+    "sys_monitor_",
+    "pending_monitor_",
+    "latch_monitor_",
+)
 
 LAB_SAMPLE_MISSION = {
     "request_step": 1,
@@ -76,7 +81,7 @@ def split_state(variables, state, input_variables):
 def physical_inputs(input_variables):
     return {
         name for name in input_variables
-        if not name.startswith("env_monitor_")
+        if not name.startswith(MONITOR_PREFIXES)
     }
 
 

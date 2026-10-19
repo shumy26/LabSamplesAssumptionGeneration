@@ -69,7 +69,7 @@ Use every supplied artifact as evidence: the natural-language mission, Goal Mode
 
 Critically evaluate the specification for operational resilience against non-ideal physical realities. Real-world environments are imperfect: sensors may fail to read, human operators may abandon tasks, and expected environmental triggers might never occur. Look for missing timeouts, fallback states, or boundary conditions needed to prevent the system from getting permanently stuck (starvation) when the ideal sequence of events is disrupted.
 
-Identify at most three findings. Prioritize missing assumptions and missing atomic propositions that are directly supported by the supplied artifacts.
+Identify at most three findings. Prioritize missing domain assumptions and missing atomic propositions that are directly supported by the supplied artifacts. Domain properties are immutable physical facts: do not criticize them, propose changes to them, or include them as findings.
 
 Identify all your findings from these categories:
 1. missing_assumption: an omitted physical constraint (e.g., location mutex).
@@ -124,8 +124,8 @@ COUNTER-STRATEGY:
 
 PROPOSAL REQUIREMENTS:
 - Match the existing Goal Model vocabulary and the design rules; do not invent a different modeling style.
-- Put environment facts and physical responses under Assumption, and controller commands under Goal, with ownership established by Initialization. An Environment 'Assumption' can ONLY guarantee environment inputs. It CANNOT force a system output (like load_machine) to occur. A System 'Goal' CANNOT force an environment input to occur.
-- Preserve the current workflow's exact accepted headers and one-line FormalDef syntax.
+- Keep immutable physical facts under DomainProperty (or Domain Property) and do not propose edits to them. Put revisable environment behavior and physical responses under Domain Assumption or Assumption, and controller commands under Goal. Temporal goals are routed by the ownership of their consequent: an input consequent is an environment obligation, while an output consequent is a system obligation. An environment assumption can ONLY guarantee environment inputs. It CANNOT force a system output (like load_machine) to occur.
+- Preserve the current workflow's exact accepted headers (`DomainProperty`/`Domain Property`, `Domain Assumption`, `Assumption`, `Goal`, `Goal Maintain`, and `Goal Achieve`) and one-line FormalDef syntax. Never use a DomainProperty header as a proposal header.
 - Prefer the smallest change that explains the evidence. If a proposed variable is necessary, specify its owner, initialization value, and where it belongs in the Goal Model.
 - Never propose a formula that the compiler contract rejects or that would make the model realizable by assuming away the mission.
 """

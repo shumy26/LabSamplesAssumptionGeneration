@@ -13,9 +13,13 @@ Goal Achieve [MissionLiveness]
   Refines: Goal Achieve [SampleSafelyProcessed]
   InformalDef: The robot must eventually complete its tasks, process the samples, and return to a ready state.
 
+DomainProperty [PhysicalWorldLaws]
+  Refines: Goal Achieve [SampleSafelyProcessed]
+  InformalDef: Immutable physical laws governing robot locations and movement inertia.
+
 Assumption [EnvironmentPhysicsAndResponsiveness]
   Refines: Goal Achieve [SampleSafelyProcessed]
-  InformalDef: The physical environment and sensors must obey the laws of physics and respond to robot commands.
+  InformalDef: The physical environment and sensors must respond to robot commands and actions.
 
 # --------------------------------------------------------------------
 # 0. INITIALIZATION
@@ -32,131 +36,144 @@ Initialization [SystemStart]
   FormalDef: !goto_floor & !goto_lab & !scan & !load_machine & !log_event
 
 # --------------------------------------------------------------------
-# 1. GOAL MAINTAIN (System Safety Requirements)
-# Restrições de transição do controlador (apenas controla outputs)
+# 1. GOAL (System Safety Invariants & Valid Transitions)
+# Relocated from Goal Maintain to avoid permanent G(p -> G q) latching
 # --------------------------------------------------------------------
 
-Goal Maintain [ExclusiveNavigation]
+Goal [ExclusiveNavigation]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot cannot issue commands to navigate to the floor and the lab simultaneously.
   FormalDef: G (!(goto_floor & goto_lab))
 
-Goal Maintain [ScanRequiresAuthorizedSampleAtFloor]
+Goal [ScanRequiresAuthorizedSampleAtFloor]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Scanning is only permitted if the robot is at the floor, an authorization is present, the barcode is not yet OK, and human pickup is not happening.
   FormalDef: G (scan -> (at_floor & auth_present & !barcode_ok & !human_pickup))
 
-Goal Maintain [LabNavigationRequiresSample]
+Goal [LabNavigationRequiresSample]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Navigation to the lab can only occur if the barcode is OK or the robot is already not at the floor.
   FormalDef: G (goto_lab -> (barcode_ok | !at_floor))
 
-Goal Maintain [NavigationPersistence]
+Goal [NavigationPersistence]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Once a valid request is being handled or the robot is in transit to the lab, the goto_lab command must persist until arrival.
   FormalDef: G (((request & barcode_ok & at_floor & !human_pickup) | (goto_lab & !at_lab & !human_pickup)) -> goto_lab')
 
-Goal Maintain [LoadRequiresLabSample]
+Goal [LoadRequiresLabSample]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot can only load the machine if it is at the lab and the barcode is OK.
   FormalDef: G (load_machine -> (at_lab & barcode_ok & !human_pickup))
 
-Goal Maintain [LoadWhenReady]
+Goal [LoadWhenReady]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: If the robot is at the lab and the barcode is OK, it must initiate the loading process.
   FormalDef: G ((at_lab & barcode_ok & !human_pickup) -> load_machine)
 
-Goal Maintain [NoPrematureReturn]
+Goal [NoPrematureReturn]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The robot cannot return to the floor while it holds a valid sample at the lab.
   FormalDef: G ((at_lab & barcode_ok & !human_pickup) -> !goto_floor)
 
-Goal Maintain [ReturnAfterProcessing]
+Goal [ReturnAfterProcessing]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Once at the lab and the sample is consumed (or picked up), the robot must initiate return to the floor in the next step.
   FormalDef: G ((at_lab & (!barcode_ok | human_pickup)) -> goto_floor')
 
-Goal Maintain [ReturnPersistence]
+Goal [ReturnPersistence]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: The return command must persist until the robot arrives at the floor.
   FormalDef: G ((goto_floor & !at_floor) -> goto_floor')
 
-Goal Maintain [IdleNavigation]
+Goal [IdleNavigation]
   Refines: Goal Maintain [SystemSafety]
-  InformalDef: If idle at the floor without a request, do not initiate navigation to the lab.
-  FormalDef: G ((!request & at_floor & !goto_lab & !goto_floor) -> !goto_lab')
+  InformalDef: If idle at the floor without a request or valid barcode, do not initiate navigation to the lab.
+  FormalDef: G ((!request & !barcode_ok & at_floor & !goto_lab & !goto_floor) -> !goto_lab')
 
-Goal Maintain [IdleReturn]
+Goal [IdleReturn]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: If idle at the floor without a request, do not initiate navigation to the floor.
   FormalDef: G ((!request & at_floor & !goto_lab & !goto_floor) -> !goto_floor')
 
-Goal Maintain [ActionsAreLogged]
+Goal [ActionsAreLogged]
   Refines: Goal Maintain [SystemSafety]
   InformalDef: Any proactive action (scan, navigation, loading) must trigger the logging event.
   FormalDef: G ((scan | goto_floor | goto_lab | load_machine) -> log_event)
 
 # --------------------------------------------------------------------
 # 2. GOAL ACHIEVE (System Liveness Guarantees)
-# O que o sistema promete alcançar ciclicamente
+# Uses G(p -> F q) with system-owned consequent outputs
 # --------------------------------------------------------------------
 
 Goal Achieve [MissionCompletion]
   Refines: Goal Achieve [MissionLiveness]
-  InformalDef: The system guarantees that if there is a request and authorization, the sample will eventually be loaded or picked up by a human.
-  FormalDef: F (!(request & auth_present) | (load_machine | human_pickup))
+  InformalDef: Whenever a request and authorization are present without human pickup, the robot will eventually load the machine.
+  FormalDef: G ((request & auth_present & !human_pickup) -> F (human_pickup | load_machine))
 
 Goal Achieve [ReturnToFloor]
   Refines: Goal Achieve [MissionLiveness]
-  InformalDef: The robot guarantees it will always eventually return to the floor to be ready for new requests.
-  FormalDef: F at_floor
+  InformalDef: Whenever the robot is at the lab without an unprocessed sample, it eventually commands a return to the floor.
+  FormalDef: G ((at_lab & (!barcode_ok | human_pickup)) -> F goto_floor)
 
 # --------------------------------------------------------------------
-# 3. ASSUMPTION (Environment Physics & Responsiveness)
-# Regras do mundo real que o ambiente não pode quebrar
+# 3. DOMAIN PROPERTIES (Immutable Physical Behavior)
 # --------------------------------------------------------------------
 
-Assumption [LocationMutex]
-  Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
+DomainProperty [LocationMutex]
+  Refines: DomainProperty [PhysicalWorldLaws]
   InformalDef: The environment cannot physically place the robot at the floor and the lab simultaneously.
-  FormalDef: !(at_floor & at_lab)
+  FormalDef: G (!(at_floor & at_lab))
 
-Assumption [FloorInertia]
-  Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
+DomainProperty [FloorInertia]
+  Refines: DomainProperty [PhysicalWorldLaws]
   InformalDef: If the robot is at the floor and not commanded to the lab, it remains at the floor.
-  FormalDef: (at_floor & !goto_lab) -> at_floor'
+  FormalDef: G ((at_floor & !goto_lab) -> at_floor')
 
-Assumption [LaboratoryInertia]
-  Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
+DomainProperty [LaboratoryInertia]
+  Refines: DomainProperty [PhysicalWorldLaws]
   InformalDef: If the robot is at the lab and not commanded to the floor, it remains at the lab.
-  FormalDef: (at_lab & !goto_floor) -> at_lab'
+  FormalDef: G ((at_lab & !goto_floor) -> at_lab')
+
+# --------------------------------------------------------------------
+# 4. ASSUMPTIONS (Revisable Environment Expectations & Liveness)
+# --------------------------------------------------------------------
 
 Assumption [BarcodeReaderCausality]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: The barcode status cannot become OK unless a scan occurs.
-  FormalDef: (!barcode_ok & !scan) -> !barcode_ok'
+  FormalDef: G ((!barcode_ok & !scan) -> !barcode_ok')
 
 Assumption [BarcodePersistence]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: Once a barcode is OK, it remains OK until the machine is loaded or a human picks it up.
-  FormalDef: (barcode_ok & !load_machine & !human_pickup) -> barcode_ok'
+  FormalDef: G ((barcode_ok & !load_machine & !human_pickup) -> barcode_ok')
 
 Assumption [SampleConsumed]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: Loading the machine or human pickup consumes the sample, invalidating the barcode status for the next cycle.
-  FormalDef: (load_machine | human_pickup) -> !barcode_ok'
+  FormalDef: G ((load_machine | human_pickup) -> !barcode_ok')
 
 Assumption [LaboratoryArrival]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: The environment guarantees that commanding the robot to the lab will eventually result in arrival.
-  FormalDef: goto_lab -> F at_lab
+  FormalDef: G (goto_lab -> F at_lab)
 
 Assumption [FloorArrival]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: The environment guarantees that commanding the robot to the floor will eventually result in arrival.
-  FormalDef: goto_floor -> F at_floor
+  FormalDef: G (goto_floor -> F at_floor)
 
 Assumption [BarcodeBecomesValid]
   Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
   InformalDef: The environment guarantees that if authorization is present and a scan is executed, the barcode will eventually become valid.
-  FormalDef: (auth_present & scan) -> F barcode_ok
+  FormalDef: G ((auth_present & scan) -> F barcode_ok)
+
+Assumption [RequestPersistence]
+  Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
+  InformalDef: An active request persists until the sample is loaded into the machine or picked up by a human.
+  FormalDef: G ((request & !load_machine & !human_pickup) -> request')
+
+Assumption [AuthorizationPersistence]
+  Refines: Assumption [EnvironmentPhysicsAndResponsiveness]
+  InformalDef: Once authorization is present at the floor, it persists until the barcode is validated or human pickup occurs.
+  FormalDef: G ((auth_present & !barcode_ok & !human_pickup) -> auth_present')

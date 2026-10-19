@@ -1,8 +1,10 @@
 [INPUT]
 at_base
 at_room
-env_monitor_BaseArrival
-env_monitor_RoomArrival
+pending_monitor_BaseArrival
+pending_monitor_MissionCompletion
+pending_monitor_ReturnToBase
+pending_monitor_RoomArrival
 request
 room_cleaned
 room_occupied
@@ -13,10 +15,16 @@ abort_mission
 clean_room
 goto_base
 goto_room
-sys_monitor_ReturnToBase
 
 
 [ENV_TRANS]
+| ! pending_monitor_MissionCompletion' & | pending_monitor_MissionCompletion & request ! | clean_room abort_mission ! | clean_room abort_mission
+| ! & | pending_monitor_MissionCompletion & request ! | clean_room abort_mission ! | clean_room abort_mission pending_monitor_MissionCompletion'
+| ! pending_monitor_ReturnToBase' & | pending_monitor_ReturnToBase & & ! request ! at_base ! goto_base ! goto_base
+| ! & | pending_monitor_ReturnToBase & & ! request ! at_base ! goto_base ! goto_base pending_monitor_ReturnToBase'
+! & at_base at_room
+| ! & at_base ! goto_room at_base'
+| ! & at_room ! goto_base at_room'
 | ! clean_room room_cleaned'
 | ! & room_cleaned request room_cleaned'
 | ! ! request ! room_cleaned'
@@ -25,8 +33,10 @@ sys_monitor_ReturnToBase
 | ! & room_occupied ! abort_mission room_occupied'
 | ! | clean_room abort_mission ! request'
 | ! & & request ! clean_room ! abort_mission request'
-& | ! env_monitor_RoomArrival' & | env_monitor_RoomArrival & goto_room ! at_room ! at_room' | env_monitor_RoomArrival' ! & | env_monitor_RoomArrival & goto_room ! at_room ! at_room'
-& | ! env_monitor_BaseArrival' & | env_monitor_BaseArrival & goto_base ! at_base ! at_base' | env_monitor_BaseArrival' ! & | env_monitor_BaseArrival & goto_base ! at_base ! at_base'
+| ! pending_monitor_RoomArrival' & | pending_monitor_RoomArrival & goto_room ! at_room ! at_room
+| ! & | pending_monitor_RoomArrival & goto_room ! at_room ! at_room pending_monitor_RoomArrival'
+| ! pending_monitor_BaseArrival' & | pending_monitor_BaseArrival & goto_base ! at_base ! at_base
+| ! & | pending_monitor_BaseArrival & goto_base ! at_base ! at_base pending_monitor_BaseArrival'
 
 
 [ENV_INIT]
@@ -35,8 +45,10 @@ at_base
 ! at_room
 ! room_occupied
 ! room_cleaned
-! env_monitor_RoomArrival
-! env_monitor_BaseArrival
+! pending_monitor_MissionCompletion
+! pending_monitor_ReturnToBase
+! pending_monitor_RoomArrival
+! pending_monitor_BaseArrival
 
 
 [SYS_TRANS]
@@ -51,7 +63,6 @@ at_base
 | ! & & & at_room' request' ! room_occupied' ! room_cleaned' clean_room'
 | ! & & at_room' request' room_occupied' abort_mission'
 ! & clean_room' abort_mission'
-& | ! sys_monitor_ReturnToBase' & | sys_monitor_ReturnToBase & ! request ! at_base ! at_base' | sys_monitor_ReturnToBase' ! & | sys_monitor_ReturnToBase & ! request ! at_base ! at_base'
 
 
 [SYS_INIT]
@@ -59,15 +70,14 @@ at_base
 ! goto_room
 ! clean_room
 ! abort_mission
-! sys_monitor_ReturnToBase
 
 
 [ENV_LIVENESS]
-! env_monitor_RoomArrival
-! env_monitor_BaseArrival
+! pending_monitor_RoomArrival
+! pending_monitor_BaseArrival
 
 
 [SYS_LIVENESS]
-| | ! request clean_room abort_mission
-! sys_monitor_ReturnToBase
+! pending_monitor_MissionCompletion
+! pending_monitor_ReturnToBase
 
