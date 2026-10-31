@@ -2,7 +2,7 @@ Using BDD Package: CUDDFactory, Version: CUDD 3.0
 Using BDD Package: CUDDFactory, Version: CUDD 3.0
 GR1GameImplC.checkRealizability: start
 GR1GameImplC.checkRealizability: end
-Nodes num: 545
+Nodes num: 534
 Nodes table size: 6132
 Result: Specification is unrealizable
 extract strategy - Start
@@ -66,8 +66,8 @@ S1 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, e
 S1 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:false, goto_lab:true, load_machine:true, log_event:true, scan:true};
 S1 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:false, scan:false};
 S1 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:false, scan:true};
-S1 -> S2 {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:true, scan:false};
 S1 -> S3 {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:false, goto_lab:false, load_machine:false, log_event:true, scan:false};
+S1 -> S2 {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:true, scan:false};
 S2 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:true, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:false, scan:false};
 S2 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:true, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:false, scan:true};
 S2 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:true, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:true, scan:true};
@@ -114,8 +114,8 @@ S3 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, e
 S3 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:false, goto_lab:true, load_machine:true, log_event:true, scan:true};
 S3 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:false, scan:false};
 S3 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:false, scan:true};
-S3 -> S1 {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:false, goto_lab:false, load_machine:false, log_event:true, scan:false};
 S3 -> S4 {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:true, scan:false};
+S3 -> S1 {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:false, goto_lab:false, load_machine:false, log_event:true, scan:false};
 S4 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:true, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:false, scan:false};
 S4 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:true, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:false, scan:true};
 S4 -> DEAD {at_floor:false, at_lab:false, auth_present:true, barcode_ok:false, env_monitor_FloorArrival:true, env_monitor_LaboratoryArrival:false, human_pickup:false, request:true} / {goto_floor:true, goto_lab:false, load_machine:false, log_event:true, scan:true};
