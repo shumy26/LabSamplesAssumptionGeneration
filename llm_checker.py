@@ -15,7 +15,7 @@ def run_command(command, cwd=None):
 
 def classify_spectra(spectra_cli, spectra_input):
     code, output = run_command([
-        "java", "-jar", spectra_cli, "-i", f"../{spectra_input}", "--counter-strategy"
+        "java", "-Djava.library.path=.", "-jar", spectra_cli, "-i", f"../{spectra_input}", "--counter-strategy"
     ], cwd="spectra")
     if "Specification is realizable" in output:
         return "realizable", output

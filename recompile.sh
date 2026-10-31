@@ -5,7 +5,7 @@ python3 compile_to_spectra.py LabSamples.gm LabSamples.spectra
 echo "Checking realizability..."
 
 cd spectra
-CHECK_REALIZABILITY=$(java -jar spectra-cli.jar -i ../LabSamples.spectra --counter-strategy 2>&1)
+CHECK_REALIZABILITY=$(java -Djava.library.path=. -jar spectra-cli.jar -i ../LabSamples.spectra --counter-strategy 2>&1)
 cd ..
 
 if [[ "$CHECK_REALIZABILITY" == *"Specification is realizable"* ]]; then
