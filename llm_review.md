@@ -1,59 +1,43 @@
 # LLM Specification Review
 
-The specification is realizable but lacks operational resilience. It assumes a perfect environment where every command is eventually satisfied, failing to account for sensor failures or human non-compliance, which could lead to the robot being stuck in a navigation or scanning loop.
+The specification is unrealizable because the robot is unable to progress from scanning to loading. The environment is not required to validate the barcode after a scan, creating a deadlock where the robot waits for a condition that never arrives.
 
-## 1. missing_atomic_proposition (medium)
-**Evidence:** Assumption [LaboratoryArrival] and [FloorArrival] rely on 'at_lab' and 'at_floor' without a way to detect if a sensor has failed or if the robot is stuck.
-**Rationale:** If the robot issues 'goto_lab' but the 'at_lab' sensor fails to trigger due to hardware error, the system will wait indefinitely for a condition that never occurs, violating liveness without a recovery path.
-**Candidate proposal:**
-```json
-{
-  "action": "add_atomic_proposition",
-  "header": "Initialization [EnvironmentStart]",
-  "informal_def": "Add a sensor_fault variable to represent hardware failures.",
-  "formal_def": "!sensor_fault",
-  "variables": [
-    "sensor_fault"
-  ]
-}
-```
-**Confidence:** 0.9
-
-## 2. missing_assumption (high)
-**Evidence:** Assumption [BarcodeBecomesValid] (auth_present & scan) -> F barcode_ok.
-**Rationale:** The model assumes the environment *must* eventually validate the barcode if the robot scans. In reality, a damaged barcode or a dirty lens means the scan might never succeed. The robot needs a way to handle 'scan failed' to avoid starvation in the 'ScanRequiresAuthorizedSampleAtFloor' safety loop.
+## 1. missing_assumption (high)
+**Evidence:** The commented-out 'Assumption [BarcodeBecomesValid]' and the lack of any liveness guarantee for 'barcode_ok' following a 'scan' command.
+**Rationale:** The robot's safety rules require 'barcode_ok' to navigate to the lab and load the machine. However, the environment is not obligated to make the barcode valid after the robot performs a scan. This allows the environment to keep 'barcode_ok' false forever, causing the robot to starve of progress.
 **Candidate proposal:**
 ```json
 {
   "action": "add_assumption",
-  "header": "Assumption [ScanResult]",
-  "informal_def": "The environment provides a result for every scan attempt, either success or failure.",
-  "formal_def": "scan -> F (barcode_ok | scan_failed)",
+  "header": "Assumption [BarcodeBecomesValid]",
+  "informal_def": "The environment guarantees that if a scan is performed, the barcode will eventually be recognized as valid.",
+  "formal_def": "scan -> F barcode_ok",
   "variables": [
-    "scan_failed"
+    "scan",
+    "barcode_ok"
   ]
 }
 ```
-**Confidence:** 0.85
+**Confidence:** 1.0
 
-## 3. missing_assumption (medium)
-**Evidence:** Goal Maintain [NavigationPersistence] and [ReturnPersistence] force commands to persist until arrival.
-**Rationale:** If a human operator intervenes or a physical obstacle prevents arrival, the robot is forced by the specification to keep issuing the same command forever. There is no 'timeout' or 'error' state to break the persistence loop.
+## 2. missing_assumption (medium)
+**Evidence:** The absence of inertia assumptions for 'at_floor' and 'at_lab' in the active Goal Model (they are currently commented out).
+**Rationale:** Without inertia assumptions, the environment can non-deterministically change the robot's location (e.g., teleporting from floor to lab) without a command. This violates the 'Physical completeness' rule and can lead to the system violating safety invariants or failing to meet liveness goals due to unpredictable state jumps.
 **Candidate proposal:**
 ```json
 {
   "action": "add_assumption",
-  "header": "Assumption [RequestTimeout]",
-  "informal_def": "A request or navigation task may be cancelled or timed out by the operator.",
-  "formal_def": "G (request -> F (!request | at_lab | at_floor))",
+  "header": "Assumption [FloorInertia]",
+  "informal_def": "If the robot is at the floor and not commanded to the lab, it remains at the floor.",
+  "formal_def": "(at_floor & !goto_lab) -> at_floor'",
   "variables": [
-    "request"
+    "at_floor",
+    "goto_lab"
   ]
 }
 ```
-**Confidence:** 0.8
+**Confidence:** 0.95
 
 ## Human Review Questions
-- How should the robot behave if a barcode is physically unreadable (scan_failed)?
-- Should the robot have a maximum retry limit for navigation before entering an error state?
-- Is there a mechanism for a human operator to cancel a pending delivery request?
+- Is the barcode validation process purely environmental (sensor-based), or does the robot need to perform multiple scan attempts if the first fails?
+- Should the robot's location be strictly constrained by its movement commands, or are there other environmental factors that could move the robot?
