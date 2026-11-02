@@ -1,16 +1,16 @@
 # LLM Specification Review
 
-The specification is unrealizable because the robot is unable to progress from scanning to loading. The environment is not required to validate the barcode after a scan, creating a deadlock where the robot waits for a condition that never arrives.
+The specification is unrealizable because the system is forced into a logical deadlock: it must load the machine to satisfy mission liveness, but it cannot load the machine unless the barcode is OK, and the barcode can only become OK if the robot performs a scan. However, the current safety rules and liveness requirements do not provide a guaranteed path for the environment to provide a valid barcode or for the robot to transition through the scanning phase without violating safety constraints.
 
 ## 1. missing_assumption (high)
-**Evidence:** The commented-out 'Assumption [BarcodeBecomesValid]' and the lack of any liveness guarantee for 'barcode_ok' following a 'scan' command.
-**Rationale:** The robot's safety rules require 'barcode_ok' to navigate to the lab and load the machine. However, the environment is not obligated to make the barcode valid after the robot performs a scan. This allows the environment to keep 'barcode_ok' false forever, causing the robot to starve of progress.
+**Evidence:** Goal Achieve [MissionCompletion] requires (load_machine | human_pickup), but Assumption [BarcodeReaderCausality] only constrains when barcode_ok can change, not that it *will* change.
+**Rationale:** The environment can indefinitely refuse to set 'barcode_ok' to true even after a 'scan' command is issued. Since the robot's mission success depends on the barcode being valid, the environment can win by simply never validating the scan, causing the robot to starve of progress.
 **Candidate proposal:**
 ```json
 {
   "action": "add_assumption",
-  "header": "Assumption [BarcodeBecomesValid]",
-  "informal_def": "The environment guarantees that if a scan is performed, the barcode will eventually be recognized as valid.",
+  "header": "Assumption [BarcodeValidation]",
+  "informal_def": "If the robot performs a scan, the environment will eventually validate the barcode.",
   "formal_def": "scan -> F barcode_ok",
   "variables": [
     "scan",
@@ -20,24 +20,24 @@ The specification is unrealizable because the robot is unable to progress from s
 ```
 **Confidence:** 1.0
 
-## 2. missing_assumption (medium)
-**Evidence:** The absence of inertia assumptions for 'at_floor' and 'at_lab' in the active Goal Model (they are currently commented out).
-**Rationale:** Without inertia assumptions, the environment can non-deterministically change the robot's location (e.g., teleporting from floor to lab) without a command. This violates the 'Physical completeness' rule and can lead to the system violating safety invariants or failing to meet liveness goals due to unpredictable state jumps.
+## 2. missing_atomic_proposition (medium)
+**Evidence:** Goal Maintain [ScanRequiresAuthorizedSampleAtFloor] uses 'auth_present', but there is no mechanism for the environment to provide or revoke authorization once a request is made.
+**Rationale:** The mission states a nurse requests delivery and provides data. If 'auth_present' is a static environmental input that doesn't respond to the 'request', the robot might be stuck waiting for an authorization that never arrives because the model lacks a trigger-response relationship between 'request' and 'auth_present'.
 **Candidate proposal:**
 ```json
 {
   "action": "add_assumption",
-  "header": "Assumption [FloorInertia]",
-  "informal_def": "If the robot is at the floor and not commanded to the lab, it remains at the floor.",
-  "formal_def": "(at_floor & !goto_lab) -> at_floor'",
+  "header": "Assumption [AuthorizationResponse]",
+  "informal_def": "Once a request is made, the environment will eventually provide authorization.",
+  "formal_def": "request -> F auth_present",
   "variables": [
-    "at_floor",
-    "goto_lab"
+    "request",
+    "auth_present"
   ]
 }
 ```
-**Confidence:** 0.95
+**Confidence:** 0.9
 
 ## Human Review Questions
-- Is the barcode validation process purely environmental (sensor-based), or does the robot need to perform multiple scan attempts if the first fails?
-- Should the robot's location be strictly constrained by its movement commands, or are there other environmental factors that could move the robot?
+- Does the environment guarantee that a successful scan will always result in a valid barcode within a finite time?
+- Is the authorization process triggered automatically by the 'request' signal, or must it be a separate manual step not modeled here?
