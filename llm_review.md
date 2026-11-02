@@ -1,37 +1,49 @@
 # LLM Specification Review
 
-The counter-strategy reveals that the specification is unrealizable because the controller is forced into a 'DEAD' state when the environment provides inputs that do not align with the expected sequence of transitions. Specifically, the system fails when it receives a request but cannot satisfy all required actions (like `load_machine` or `scan`) simultaneously, or when environmental monitors (`env_monitor_FloorArrival`, `env_monitor_LaboratoryArrival`) trigger transitions that the current controller logic cannot handle without violating safety or liveness constraints.
+The counter-strategy indicates that the specification is unrealizable because the controller is forced into a 'DEAD' state when the environment provides inputs that do not align with the expected sequence of physical transitions. Specifically, the system fails when it receives a request but cannot satisfy the subsequent environmental arrival signals (e.g., `env_monitor_FloorArrival` or `env_monitor_LaboratoryArrival`) in a way that allows the controller to progress through the states S4-S8 without violating safety or liveness constraints. The most critical failure point is the transition from S4/S5/S6/S7 where the controller must decide on multiple outputs (goto, load, log, scan) simultaneously, and any mismatch between the environment's actual arrival and the controller's command leads to a dead end.
 
 ## 1. unjustified_strengthening (high)
-**Evidence:** The counter-strategy shows transitions to 'DEAD' when `request:true` is paired with various combinations of `load_machine`, `scan`, and `log_event`. This suggests the controller is being penalized for not performing a specific subset of actions that the environment/specification expects to happen atomically.
-**Rationale:** The specification likely requires certain actions to be performed together, but the controller's state transitions (e.g., S4 -> S5) only allow for one specific action (e.g., `log_event:true, scan:false`), leading to a violation when the environment expects a different combination.
+**Evidence:** The counter-strategy shows the system enters 'DEAD' states when the environment provides valid inputs (like `auth_present:true` and `request:true`) but the controller's required response (e.g., `goto_floor:true`) is not immediately followed by the expected environmental feedback, or when the environment provides feedback for a state the controller hasn't reached.
+**Rationale:** The model likely assumes a synchronous or perfectly predictable relationship between a controller command (like `goto_floor`) and the environment's response (`env_monitor_FloorArrival`). If the environment is allowed to provide these signals at any time, or if the controller is required to perform multiple actions that the environment cannot 'validate' in a single step, the specification becomes unrealizable.
 **Candidate proposal:**
 ```json
 {
-  "action": "none",
-  "header": "N/A",
-  "informal_def": "N/A",
-  "formal_def": "N/A",
-  "variables": []
+  "action": "add_assumption",
+  "header": "Assumption",
+  "informal_def": "Assumption {env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, auth_present:false, barcode_ok:false, human_pickup:false, request:false, at_floor:false, at_lab:false} / {goto_floor:false, goto_lab:false, load_machine:false, log_event:false, scan:false}",
+  "formal_def": "Assumption {env_monitor_FloorArrival:false, env_monitor_LaboratoryArrival:false, auth_present:false, barcode_ok:false, human_pickup:false, request:false, at_floor:false, at_lab:false} / {goto_floor:false, goto_lab:false, load_machine:false, log_event:false, scan:false}",
+  "variables": [
+    "env_monitor_FloorArrival",
+    "env_monitor_LaboratoryArrival",
+    "auth_present",
+    "barcode_ok",
+    "human_pickup",
+    "request",
+    "at_floor",
+    "at_lab"
+  ]
 }
 ```
 **Confidence:** 5
 
 ## 2. missing_assumption (medium)
-**Evidence:** The transitions from S4, S5, S6, and S7 to DEAD occur under various environmental conditions where `env_monitor_FloorArrival` or `env_monitor_LaboratoryArrival` are true, but the controller's output does not match the expected 'next step' in the workflow.
-**Rationale:** The model lacks an Assumption that guarantees the environment will only signal arrival (via monitors) after the controller has issued the corresponding movement command (`goto_floor` or `goto_lab`). Without this, the environment can 'jump ahead' in the state machine, causing the controller to enter an invalid state.
+**Evidence:** The controller is expected to transition through S4 -> S5 -> S3 or S6 -> S7 -> S8, but the environment's ability to trigger these transitions is not constrained by the controller's actions.
+**Rationale:** To make the model realizable, we must assume that the environment's arrival monitors (`env_monitor_FloorArrival` and `env_monitor_LaboratoryArrival`) are causally linked to the controller's movement commands (`goto_floor` and `goto_lab`). Without this assumption, the environment can 'cheat' by providing arrival signals before the robot has even been told to move, or by withholding them indefinitely.
 **Candidate proposal:**
 ```json
 {
   "action": "add_assumption",
-  "header": "Environment Arrival Sequence",
-  "informal_def": "The environment will only signal arrival at a location after the controller has commanded movement to that location.",
-  "formal_def": "G(env_monitor_FloorArrival -> O goto_floor) & G(env_monitor_LaboratoryArrival -> O goto_lab)",
-  "variables": []
+  "header": "Assumption",
+  "informal_def": "Assumption {env_monitor_FloorArrival:true, env_monitor_LaboratoryArrival:true} / {goto_floor:true, goto_lab:true}",
+  "formal_def": "Assumption {env_monitor_FloorArrival:true, env_monitor_LaboratoryArrival:true} / {goto_floor:true, goto_lab:true}",
+  "variables": [
+    "env_monitor_FloorArrival",
+    "env_monitor_LaboratoryArrival"
+  ]
 }
 ```
 **Confidence:** 4
 
 ## Human Review Questions
-- Are the environmental monitors (FloorArrival/LaboratoryArrival) intended to be reactive to the controller's commands, or are they independent sensors that can trigger at any time?
-- Is there a requirement that certain actions (like scanning and logging) must occur in the same time step as the arrival?
+- Are the environmental monitors (FloorArrival/LaboratoryArrival) intended to be strictly reactive to the 'goto' commands, or can they occur independently?
+- Is the robot required to perform 'load_machine', 'log_event', and 'scan' as a single atomic transaction, or can these be spread across multiple time steps?
